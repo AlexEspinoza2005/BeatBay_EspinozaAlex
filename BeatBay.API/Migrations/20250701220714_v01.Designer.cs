@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BeatBay.API.Migrations
 {
     [DbContext(typeof(BeatBayDbContext))]
-    [Migration("20250701015257_mig1")]
-    partial class mig1
+    [Migration("20250701220714_v01")]
+    partial class v01
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
