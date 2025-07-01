@@ -1,2 +1,2 @@
 # BeatBay
-Este repositorio contiene todo el código fuente relacionado con el proyecto integrador, cada integrante del grupo manejará sus trabajos en ramas diferentes.
+Este repositorio contiene todo el código fuente relacionado con el proyecto integrador. Cada integrante del grupo gestionará su trabajo en ramas separadas.
