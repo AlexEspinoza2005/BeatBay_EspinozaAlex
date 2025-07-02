@@ -115,9 +115,9 @@ namespace BeatBay.Data
             // Seed Plans
             builder.Entity<Plan>().HasData(
                 new Plan { Id = 1, Name = "Free", PriceUSD = 0, MaxConnections = 1 },
-                new Plan { Id = 2, Name = "Personal", PriceUSD = 9.99m, MaxConnections = 1 },
-                new Plan { Id = 3, Name = "Familiar", PriceUSD = 14.99m, MaxConnections = 4 },
-                new Plan { Id = 4, Name = "Empresarial", PriceUSD = 29.99m, MaxConnections = 50 }
+                new Plan { Id = 2, Name = "Personal", PriceUSD = 1m, MaxConnections = 1 },
+                new Plan { Id = 3, Name = "Familiar", PriceUSD = 3.50m, MaxConnections = 4 },
+                new Plan { Id = 4, Name = "Empresarial", PriceUSD = 35m, MaxConnections = 50 }
             );
 
             // Seed Roles
