@@ -18,7 +18,7 @@ namespace BeatBay.Controllers
         private readonly BeatBayDbContext _context;
         private readonly UserManager<User> _userManager;
         private readonly SignInManager<User> _signInManager;
-        private readonly IEmailSender _emailSender; 
+        private readonly IEmailSender _emailSender;
 
         public AuthController(BeatBayDbContext context, UserManager<User> userManager, SignInManager<User> signInManager, IEmailSender emailSender)
         {
@@ -48,7 +48,20 @@ namespace BeatBay.Controllers
             // Enviar correo de confirmación
             var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
             var confirmationLink = Url.Action("ConfirmEmail", "Auth", new { userId = user.Id, token = token }, Request.Scheme);
-            await _emailSender.SendEmailAsync(user.Email, "Confirm your email", confirmationLink);
+
+            var emailBody = $@"¡Bienvenido a BeatBay!
+
+Hola {user.Name ?? user.UserName},
+
+Gracias por registrarte en BeatBay. Para completar tu registro, por favor confirma tu email haciendo clic en el siguiente enlace:
+
+{confirmationLink}
+
+¡Gracias por unirte a nuestra comunidad musical!
+
+El equipo de BeatBay";
+
+            await _emailSender.SendEmailAsync(user.Email, "Confirma tu email - BeatBay", emailBody);
 
             await _userManager.AddToRoleAsync(user, "User");
             return Ok(new { message = "User created successfully. Please confirm your email." });
@@ -97,9 +110,27 @@ namespace BeatBay.Controllers
             if (!result.Succeeded)
                 return BadRequest(result.Errors);
 
+            // Enviar correo de confirmación para artista
+            var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+            var confirmationLink = Url.Action("ConfirmEmail", "Auth", new { userId = user.Id, token = token }, Request.Scheme);
+
+            var emailBody = $@"¡Bienvenido a BeatBay como Artista!
+
+Hola {user.Name ?? user.UserName},
+
+Te has registrado como artista en BeatBay. Para completar tu registro, por favor confirma tu email:
+
+{confirmationLink}
+
+Una vez confirmado, podrás subir tu música y compartirla con la comunidad.
+
+¡El equipo de BeatBay";
+
+            await _emailSender.SendEmailAsync(user.Email, "Confirma tu email de Artista - BeatBay", emailBody);
+
             await _userManager.AddToRoleAsync(user, "Artist");
 
-            return Ok(new { message = "Artist registered successfully" });
+            return Ok(new { message = "Artist registered successfully. Please confirm your email." });
         }
 
         // **Recuperar Contraseña (Olvidó Contraseña)**
@@ -113,8 +144,22 @@ namespace BeatBay.Controllers
             var token = await _userManager.GeneratePasswordResetTokenAsync(user);
             var resetLink = Url.Action("ResetPassword", "Auth", new { userId = user.Id, token = token }, Request.Scheme);
 
+            var emailBody = $@"Restablecer Contraseña - BeatBay
+
+Hola {user.Name ?? user.UserName},
+
+Recibimos una solicitud para restablecer tu contraseña. Si no fuiste tú, puedes ignorar este email.
+
+Para restablecer tu contraseña, copia y pega el siguiente enlace en tu navegador:
+
+{resetLink}
+
+Este enlace expirará en 24 horas por seguridad.
+
+El equipo de BeatBay";
+
             // Enviar correo con enlace para resetear la contraseña
-            await _emailSender.SendEmailAsync(user.Email, "Reset your password", resetLink);
+            await _emailSender.SendEmailAsync(user.Email, "Restablecer Contraseña - BeatBay", emailBody);
 
             return Ok(new { message = "Password reset link sent to email" });
         }

@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using BeatBay.Data;
 using BeatBay.Model;
+using BeatBay.Services;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,10 +23,18 @@ builder.Services.AddDbContext<BeatBayDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("BeatBayDbContext")));
 
 // Configurar Identity con roles personalizados, confirmación de cuenta y correo único
-builder.Services.AddIdentity<User, Role>(options => // ? CAMBIO: Usar Role en lugar de IdentityRole
+builder.Services.AddIdentity<User, Role>(options =>
 {
     options.SignIn.RequireConfirmedAccount = true;
     options.User.RequireUniqueEmail = true; // Evita registros con el mismo correo
+
+    // Configuración de contraseña
+    options.Password.RequireDigit = true;
+    options.Password.RequireLowercase = true;
+    options.Password.RequireUppercase = false;
+    options.Password.RequireNonAlphanumeric = false;
+    options.Password.RequiredLength = 6;
+
     // Configuración de lockout
     options.Lockout.MaxFailedAccessAttempts = 5;  // Número máximo de intentos fallidos antes de bloquear la cuenta
     options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(1);  // Tiempo de bloqueo (1 minuto)
@@ -32,6 +42,9 @@ builder.Services.AddIdentity<User, Role>(options => // ? CAMBIO: Usar Role en lu
 })
 .AddEntityFrameworkStores<BeatBayDbContext>()
 .AddDefaultTokenProviders();
+
+// Registrar el servicio de email
+builder.Services.AddTransient<IEmailSender, EmailService>();
 
 // Configuración de autenticación JWT
 builder.Services.AddAuthentication(options =>
@@ -59,7 +72,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowWeb",
         policy => policy
-            .WithOrigins("https://localhost:7158")
+            .WithOrigins("https://localhost:7194")
             .AllowAnyHeader()
             .AllowAnyMethod());
 });
