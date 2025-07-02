@@ -7,6 +7,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+<<<<<<< Updated upstream
+=======
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.15" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.12.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+>>>>>>> Stashed changes
     <ProjectReference Include="..\BeatBay.APIConsumer\BeatBay.APIConsumer.csproj" />
     <ProjectReference Include="..\BeatBay.Model\BeatBay.Model.csproj" />
   </ItemGroup>
