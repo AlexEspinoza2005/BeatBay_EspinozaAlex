@@ -1,94 +1,74 @@
-using BeatBay.APIConsumer; // Esto es para usar la clase Crud<T>
-using BeatBay.Data; // Asegúrate de que esté el DbContext de tu API
-using BeatBay.Model;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System;
+using Microsoft.AspNetCore.Mvc;
 
-namespace BeatBay.MVC
+var builder = WebApplication.CreateBuilder(args);
+
+// 1) Servicios
+builder.Services.AddControllersWithViews();
+
+// 2) HttpClient nombrado para interactuar con la API
+builder.Services.AddHttpClient("BeatBay.API", client =>
 {
-    public class Program
+    client.BaseAddress = new Uri(builder.Configuration["ApiSettings:BaseUrl"]);  // Usa la URL de la API definida en appsettings.json
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+});
+
+// 3) Autenticación con Cookie (almacena el JWT en la cookie)
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
     {
-        public static void Main(string[] args)
-        {
-            var builder = WebApplication.CreateBuilder(args);
+        options.LoginPath = "/VAuth/Login";  // Redirige al login en el controlador VAuthController
+        options.LogoutPath = "/VAuth/Logout"; // Redirige al logout en el controlador VAuthController
+        options.Cookie.Name = "auth_cookie"; // Nombre de la cookie de autenticación
+        options.Cookie.HttpOnly = true;  // Solo accesible por el servidor, no en JavaScript
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;  // Asegura la cookie en producción
+        options.ExpireTimeSpan = TimeSpan.FromHours(2);  // Duración de la sesión (2 horas)
+    });
 
-            // Configurar los endpoints de la API para la clase Crud
-            ConfigureApiEndpoints();
+// 4) Configuración de CORS (permitir acceso desde tu frontend MVC)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowWeb",
+        policy => policy
+            .WithOrigins("https://localhost:7194")  // Cambia esto por tu URL de frontend en producción
+            .AllowAnyHeader()
+            .AllowAnyMethod());
+});
 
-            // Configurar servicios MVC
-            builder.Services.AddControllersWithViews();
+var app = builder.Build();
 
-            // Agregar HttpClient para hacer solicitudes a la API
-            builder.Services.AddHttpClient();
-
-            // Configurar HttpClient con la URL base de la API
-            builder.Services.AddHttpClient("BeatBayAPI", client =>
-            {
-                client.BaseAddress = new Uri("https://localhost:7037/"); // Asegúrate de que la API esté corriendo en este puerto
-                client.DefaultRequestHeaders.Add("Accept", "application/json");
-            });
-
-            // Configuración de la autenticación con cookies
-            builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-                .AddCookie(options =>
-                {
-                    options.LoginPath = "/Users/Login";  // Ruta de login si no está autenticado
-                    options.LogoutPath = "/Users/Logout"; // Ruta de logout
-                    options.AccessDeniedPath = "/Home/AccessDenied"; // Ruta cuando se niega el acceso
-                    options.ExpireTimeSpan = TimeSpan.FromHours(24); // Tiempo de expiración de la cookie
-                    options.SlidingExpiration = true; // Renovación automática de la cookie
-                });
-
-            // Configuración de autorización
-            builder.Services.AddAuthorization(options =>
-            {
-                options.FallbackPolicy = options.DefaultPolicy; // Requiere autenticación por defecto
-            });
-
-            // Agregar el contexto de base de datos (si tienes acceso a DB en MVC, pero normalmente deberías usar solo la API)
-            builder.Services.AddDbContext<BeatBayDbContext>(options =>
-                options.UseNpgsql(builder.Configuration.GetConnectionString("BeatBayDBContext"))); // Usa PostgreSQL si es el caso
-
-            var app = builder.Build();
-
-            // Configuración de la pipeline del middleware
-            if (app.Environment.IsDevelopment())
-            {
-                app.UseDeveloperExceptionPage();
-            }
-            else
-            {
-                app.UseExceptionHandler("/Home/Error");
-                app.UseHsts();
-            }
-
-            // Middleware de autenticación y autorización
-            app.UseHttpsRedirection();
-            app.UseStaticFiles(); // Para servir archivos estáticos (CSS, JS, imágenes)
-            app.UseRouting();
-            app.UseAuthentication();  // Necesario para manejar la autenticación
-            app.UseAuthorization();   // Necesario para manejar la autorización
-
-            // Configurar las rutas del controlador
-            app.MapControllerRoute(
-                name: "default",
-                pattern: "{controller=Home}/{action=Index}/{id?}");
-
-            app.Run();
-        }
-
-        // Configura los endpoints de la API para la clase Crud<T>
-        private static void ConfigureApiEndpoints()
-        {
-            Crud<User>.EndPoint = "https://localhost:7037/api/Users";
-            Crud<Plan>.EndPoint = "https://localhost:7037/api/Plans";
-            Crud<Song>.EndPoint = "https://localhost:7037/api/Songs";
-            Crud<Playlist>.EndPoint = "https://localhost:7037/api/Playlists";
-            Crud<AdminActionLog>.EndPoint = "https://localhost:7037/api/Admin/action-logs";
-            Crud<Payment>.EndPoint = "https://localhost:7037/api/Payments";
-            Crud<PlaybackStatistic>.EndPoint = "https://localhost:7037/api/Statistics/playback";
-        }
-    }
+// 5) Middleware de excepciones y HSTS
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();  // Mostrar excepciones completas en desarrollo
 }
+else
+{
+    app.UseExceptionHandler("/Home/Error");  // Redirige a la acción Error en producción
+    app.UseHsts();  // HSTS en producción para mayor seguridad
+}
+
+// 6) Resto del pipeline
+app.UseHttpsRedirection();  // Redirige todo a HTTPS
+app.UseStaticFiles();  // Permite servir archivos estáticos
+
+app.UseRouting();  // Habilita el enrutamiento
+
+// 7) Middleware de autenticación y autorización
+app.UseAuthentication();  // Habilita la autenticación
+app.UseAuthorization();   // Habilita la autorización
+
+// 8) Configuración de CORS
+app.UseCors("AllowWeb");  // Habilita CORS para el frontend
+
+// 9) Mapear rutas MVC
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}"  // Ruta predeterminada para los controladores MVC
+);
+
+app.Run();

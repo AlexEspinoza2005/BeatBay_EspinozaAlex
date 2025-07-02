@@ -119,21 +119,21 @@ namespace BeatBay.API.Migrations
                             Id = 2,
                             MaxConnections = 1,
                             Name = "Personal",
-                            PriceUSD = 9.99m
+                            PriceUSD = 1m
                         },
                         new
                         {
                             Id = 3,
                             MaxConnections = 4,
                             Name = "Familiar",
-                            PriceUSD = 14.99m
+                            PriceUSD = 3.50m
                         },
                         new
                         {
                             Id = 4,
                             MaxConnections = 50,
                             Name = "Empresarial",
-                            PriceUSD = 29.99m
+                            PriceUSD = 35m
                         });
                 });
 

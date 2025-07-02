@@ -1,4 +1,4 @@
-﻿using BeatBay.API.DTOs;
+﻿using BeatBay.DTOs;
 using BeatBay.Data;
 using BeatBay.Model;
 using Microsoft.AspNetCore.Authorization;

@@ -1,3 +1,4 @@
+using BeatBay.MVC.Models;
 using Microsoft.AspNetCore.Mvc;
 using System.Diagnostics;
 
@@ -14,18 +15,6 @@ namespace BeatBay.MVC.Controllers
 
         public IActionResult Index()
         {
-            // Mostrar mensaje de bienvenida si existe
-            if (TempData["WelcomeMessage"] != null)
-            {
-                ViewBag.WelcomeMessage = TempData["WelcomeMessage"];
-            }
-
-            // Mostrar mensaje de info si existe (como logout)
-            if (TempData["InfoMessage"] != null)
-            {
-                ViewBag.InfoMessage = TempData["InfoMessage"];
-            }
-
             return View();
         }
 
@@ -34,27 +23,10 @@ namespace BeatBay.MVC.Controllers
             return View();
         }
 
-        public IActionResult AccessDenied()
-        {
-            ViewBag.Message = "No tienes permisos para acceder a esta página.";
-            return View();
-        }
-
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
         public IActionResult Error()
         {
-            var errorViewModel = new ErrorViewModel
-            {
-                RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier
-            };
-            return View(errorViewModel);
+            return View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
         }
-    }
-
-    // Modelo para la vista de Error
-    public class ErrorViewModel
-    {
-        public string? RequestId { get; set; }
-        public bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
     }
 }
