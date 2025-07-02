@@ -1,6 +1,7 @@
 ﻿using BeatBay.Data;
 using BeatBay.DTOs;
 using BeatBay.Model;
+using BeatBay.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
@@ -19,13 +20,23 @@ namespace BeatBay.Controllers
         private readonly UserManager<User> _userManager;
         private readonly SignInManager<User> _signInManager;
         private readonly IEmailSender _emailSender;
+        private readonly IJwtService _jwtService;
+        private readonly IConfiguration _configuration;
 
-        public AuthController(BeatBayDbContext context, UserManager<User> userManager, SignInManager<User> signInManager, IEmailSender emailSender)
+        public AuthController(
+            BeatBayDbContext context,
+            UserManager<User> userManager,
+            SignInManager<User> signInManager,
+            IEmailSender emailSender,
+            IJwtService jwtService,
+            IConfiguration configuration)
         {
             _context = context;
             _userManager = userManager;
             _signInManager = signInManager;
             _emailSender = emailSender;
+            _jwtService = jwtService;
+            _configuration = configuration;
         }
 
         // **Registro de Usuario**
@@ -82,15 +93,57 @@ El equipo de BeatBay";
             return Ok(new { message = "Email confirmed successfully." });
         }
 
-        // **Login**
+        // **Login con JWT**
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginDto dto)
         {
-            var result = await _signInManager.PasswordSignInAsync(dto.UserName, dto.Password, false, false);
-            if (result.Succeeded)
-                return Ok(new { message = "Login successful" });
+            var user = await _userManager.FindByNameAsync(dto.UserName);
+            if (user == null)
+                return Unauthorized(new { message = "Invalid credentials" });
 
-            return Unauthorized(new { message = "Invalid credentials" });
+            // Verificar si el email está confirmado
+            if (!await _userManager.IsEmailConfirmedAsync(user))
+                return Unauthorized(new { message = "Email not confirmed. Please check your email." });
+
+            // Verificar si el usuario está activo
+            if (!user.IsActive)
+                return Unauthorized(new { message = "Account is deactivated. Contact support." });
+
+            var result = await _signInManager.CheckPasswordSignInAsync(user, dto.Password, false);
+            if (!result.Succeeded)
+                return Unauthorized(new { message = "Invalid credentials" });
+
+            // Generar JWT token
+            var jwtToken = await _jwtService.GenerateTokenAsync(user);
+            var refreshToken = _jwtService.GenerateRefreshToken();
+
+            // Calcular tiempo de expiración
+            var expireMinutes = Convert.ToDouble(_configuration["Jwt:ExpireMinutes"]);
+            var expiresAt = DateTime.UtcNow.AddMinutes(expireMinutes);
+
+            // Crear DTO del usuario
+            var userDto = new UserDto
+            {
+                Id = user.Id,
+                UserName = user.UserName,
+                Email = user.Email,
+                Name = user.Name,
+                Bio = user.Bio,
+                PlanId = user.PlanId,
+                IsActive = user.IsActive,
+                CreatedAt = user.CreatedAt
+            };
+
+            // Respuesta con token
+            var response = new AuthResponseDto
+            {
+                Token = jwtToken,
+                RefreshToken = refreshToken,
+                ExpiresAt = expiresAt,
+                User = userDto
+            };
+
+            return Ok(response);
         }
 
         // **Registro de Artista**
@@ -131,6 +184,88 @@ Una vez confirmado, podrás subir tu música y compartirla con la comunidad.
             await _userManager.AddToRoleAsync(user, "Artist");
 
             return Ok(new { message = "Artist registered successfully. Please confirm your email." });
+        }
+
+        // **Validar Token**
+        [HttpPost("validate-token")]
+        public async Task<IActionResult> ValidateToken([FromBody] string token)
+        {
+            var principal = _jwtService.ValidateToken(token);
+            if (principal == null)
+                return Ok(new TokenValidationDto { IsValid = false, Message = "Invalid token" });
+
+            var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userId))
+                return Ok(new TokenValidationDto { IsValid = false, Message = "Invalid token claims" });
+
+            var user = await _context.Users
+                .Include(u => u.Plan)
+                .FirstOrDefaultAsync(u => u.Id == int.Parse(userId));
+
+            if (user == null || !user.IsActive)
+                return Ok(new TokenValidationDto { IsValid = false, Message = "User not found or inactive" });
+
+            var userDto = new UserDto
+            {
+                Id = user.Id,
+                UserName = user.UserName,
+                Email = user.Email,
+                Name = user.Name,
+                Bio = user.Bio,
+                PlanId = user.PlanId,
+                PlanName = user.Plan?.Name,
+                IsActive = user.IsActive,
+                CreatedAt = user.CreatedAt
+            };
+
+            return Ok(new TokenValidationDto
+            {
+                IsValid = true,
+                Message = "Token is valid",
+                User = userDto
+            });
+        }
+
+        // **Refresh Token**
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken(RefreshTokenDto dto)
+        {
+            var principal = _jwtService.ValidateToken(dto.Token);
+            if (principal == null)
+                return BadRequest(new { message = "Invalid token" });
+
+            var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var user = await _userManager.FindByIdAsync(userId);
+
+            if (user == null || !user.IsActive)
+                return BadRequest(new { message = "User not found or inactive" });
+
+            // Generar nuevo token
+            var newJwtToken = await _jwtService.GenerateTokenAsync(user);
+            var newRefreshToken = _jwtService.GenerateRefreshToken();
+
+            var expireMinutes = Convert.ToDouble(_configuration["Jwt:ExpireMinutes"]);
+            var expiresAt = DateTime.UtcNow.AddMinutes(expireMinutes);
+
+            var response = new AuthResponseDto
+            {
+                Token = newJwtToken,
+                RefreshToken = newRefreshToken,
+                ExpiresAt = expiresAt,
+                User = new UserDto
+                {
+                    Id = user.Id,
+                    UserName = user.UserName,
+                    Email = user.Email,
+                    Name = user.Name,
+                    Bio = user.Bio,
+                    PlanId = user.PlanId,
+                    IsActive = user.IsActive,
+                    CreatedAt = user.CreatedAt
+                }
+            };
+
+            return Ok(response);
         }
 
         // **Recuperar Contraseña (Olvidó Contraseña)**
@@ -179,6 +314,45 @@ El equipo de BeatBay";
             return Ok(new { message = "Password reset successfully" });
         }
 
+        // **Logout**
+        [HttpPost("logout")]
+        [Authorize]
+        public async Task<IActionResult> Logout()
+        {
+            await _signInManager.SignOutAsync();
+            return Ok(new { message = "Logged out successfully" });
+        }
+
+        // **Obtener perfil del usuario actual**
+        [HttpGet("profile")]
+        [Authorize]
+        public async Task<ActionResult<UserDto>> GetProfile()
+        {
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+
+            var user = await _context.Users
+                .Include(u => u.Plan)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null)
+                return NotFound();
+
+            var userDto = new UserDto
+            {
+                Id = user.Id,
+                UserName = user.UserName,
+                Email = user.Email,
+                Name = user.Name,
+                Bio = user.Bio,
+                PlanId = user.PlanId,
+                PlanName = user.Plan?.Name,
+                IsActive = user.IsActive,
+                CreatedAt = user.CreatedAt
+            };
+
+            return Ok(userDto);
+        }
+
         // **Actualizar Usuario (Solo el propio usuario o admin puede modificar)**
         [HttpPut("{id}")]
         [Authorize]
@@ -204,6 +378,7 @@ El equipo de BeatBay";
 
         // **Obtener Usuario (Solo admin puede ver todos los usuarios)**
         [HttpGet("{id}")]
+        [Authorize(Roles = "Admin")]
         public async Task<ActionResult<UserDto>> GetUser(int id)
         {
             var user = await _context.Users

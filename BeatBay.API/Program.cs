@@ -43,8 +43,9 @@ builder.Services.AddIdentity<User, Role>(options =>
 .AddEntityFrameworkStores<BeatBayDbContext>()
 .AddDefaultTokenProviders();
 
-// Registrar el servicio de email
+// Registrar servicios personalizados
 builder.Services.AddTransient<IEmailSender, EmailService>();
+builder.Services.AddScoped<IJwtService, JwtService>(); // Registrar JWT Service
 
 // Configuración de autenticación JWT
 builder.Services.AddAuthentication(options =>
@@ -63,7 +64,8 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])),
+        ClockSkew = TimeSpan.Zero // Eliminar tolerancia de tiempo
     };
 });
 
@@ -97,12 +99,12 @@ app.UseStaticFiles();  // Si necesitas servir archivos estáticos
 
 app.UseRouting();
 
+// Configuración de CORS
+app.UseCors("AllowWeb");
+
 // Middleware para autenticación y autorización
 app.UseAuthentication();
 app.UseAuthorization();
-
-// Configuración de CORS
-app.UseCors("AllowWeb");
 
 // Mapeo de controladores
 app.MapControllers();
