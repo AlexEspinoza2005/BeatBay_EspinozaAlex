@@ -43,5 +43,11 @@ namespace BeatBayMVC.Controllers
         {
             return View();
         }
+
+        public IActionResult Test()
+        {
+            return View();
+        }
+
     }
 }

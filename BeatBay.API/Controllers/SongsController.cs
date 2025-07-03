@@ -78,20 +78,46 @@ namespace BeatBay.API.Controllers
 
             return Ok(songDto);
         }
-
         [HttpPost]
         [Authorize(Roles = "Artist,Admin")]
-        public async Task<ActionResult<SongDto>> CreateSong(CreateSongDto dto)
+        public async Task<ActionResult<SongDto>> CreateSong([FromForm] CreateSongDto dto, IFormFile audioFile)
         {
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+
+            // Validar archivo de audio
+            if (audioFile == null || audioFile.Length == 0)
+                return BadRequest("No se ha seleccionado un archivo de audio.");
+
+            var allowedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a" };
+            var fileExtension = Path.GetExtension(audioFile.FileName).ToLower();
+
+            if (!allowedExtensions.Contains(fileExtension))
+                return BadRequest("Formato de archivo no soportado. Solo se permiten: mp3, wav, flac, m4a");
+
+            // Crear directorio si no existe
+            var audioDirectory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "audio");
+            if (!Directory.Exists(audioDirectory))
+                Directory.CreateDirectory(audioDirectory);
+
+            // Generar nombre único para el archivo
+            var uniqueFileName = $"{Guid.NewGuid()}{fileExtension}";
+            var filePath = Path.Combine(audioDirectory, "audio", uniqueFileName);
+
+            // Guardar archivo
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await audioFile.CopyToAsync(stream);
+            }
 
             var song = new Song
             {
                 Title = dto.Title,
                 Duration = dto.Duration,
                 Genre = dto.Genre,
-                StreamingUrl = dto.StreamingUrl,
-                ArtistId = userId
+                StreamingUrl = $"/audio/{uniqueFileName}", // Ruta relativa para servir el archivo
+                ArtistId = userId,
+                IsActive = true,
+                UploadedAt = DateTime.UtcNow
             };
 
             _context.Songs.Add(song);
@@ -113,6 +139,63 @@ namespace BeatBay.API.Controllers
             };
 
             return CreatedAtAction(nameof(GetSong), new { id = song.Id }, songDto);
+        }
+
+        [HttpGet("stream/{fileName}")]
+        [AllowAnonymous]
+        public IActionResult StreamAudio(string fileName)
+        {
+            var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "audio", fileName);
+
+            if (!System.IO.File.Exists(filePath))
+                return NotFound("Archivo de audio no encontrado.");
+
+            var fileBytes = System.IO.File.ReadAllBytes(filePath);
+            var contentType = GetContentType(fileName);
+
+            return File(fileBytes, contentType, enableRangeProcessing: true);
+        }
+
+        [HttpPost("{id}/play")]
+        [Authorize]
+        public async Task<IActionResult> PlaySong(int id)
+        {
+            var song = await _context.Songs.FindAsync(id);
+            if (song == null)
+                return NotFound();
+
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+
+            // Registrar estadística de reproducción
+            var playbackStat = new PlaybackStatistic
+            {
+                EntityType = EntityType.Song,
+                EntityId = id,
+                SongId = id,
+                UserId = userId,
+                PlaybackDate = DateTime.UtcNow,
+                DurationPlayedSeconds = 0, // Se actualizará cuando termine la canción
+                PlayCount = 1
+            };
+
+            _context.PlaybackStatistics.Add(playbackStat);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Reproducción iniciada", playbackId = playbackStat.Id });
+        }
+
+        [HttpPut("playback/{playbackId}/update")]
+        [Authorize]
+        public async Task<IActionResult> UpdatePlayback(int playbackId, [FromBody] int durationPlayedSeconds)
+        {
+            var playback = await _context.PlaybackStatistics.FindAsync(playbackId);
+            if (playback == null)
+                return NotFound();
+
+            playback.DurationPlayedSeconds = durationPlayedSeconds;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Estadística de reproducción actualizada" });
         }
 
         [HttpPut("{id}")]
@@ -169,6 +252,19 @@ namespace BeatBay.API.Controllers
             }
 
             return Ok(new { message = "Song deactivated successfully" });
+        }
+
+        private string GetContentType(string fileName)
+        {
+            var extension = Path.GetExtension(fileName).ToLower();
+            return extension switch
+            {
+                ".mp3" => "audio/mpeg",
+                ".wav" => "audio/wav",
+                ".flac" => "audio/flac",
+                ".m4a" => "audio/mp4",
+                _ => "application/octet-stream"
+            };
         }
     }
 }

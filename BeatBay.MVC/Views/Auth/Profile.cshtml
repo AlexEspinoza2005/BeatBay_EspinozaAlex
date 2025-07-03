@@ -77,16 +77,16 @@
                     <div class="card-body text-center">
                         <i class="fas fa-music fa-2x text-primary mb-2"></i>
                         <h5>Songs Played</h5>
-                        <h2 class="text-primary">1,234</h2>
+                        <h2 class="text-primary">@(ViewBag.TotalPlays ?? 0)</h2>
                     </div>
                 </div>
             </div>
             <div class="col-md-6 mb-4">
                 <div class="card stat-card">
                     <div class="card-body text-center">
-                        <i class="fas fa-list fa-2x text-success mb-2"></i>
-                        <h5>Playlists</h5>
-                        <h2 class="text-success">12</h2>
+                        <i class="fas fa-upload fa-2x text-success mb-2"></i>
+                        <h5>Songs Uploaded</h5>
+                        <h2 class="text-success">@(ViewBag.SongsUploaded ?? 0)</h2>
                     </div>
                 </div>
             </div>
@@ -95,16 +95,16 @@
                     <div class="card-body text-center">
                         <i class="fas fa-clock fa-2x text-info mb-2"></i>
                         <h5>Hours Listened</h5>
-                        <h2 class="text-info">156</h2>
+                        <h2 class="text-info">@(ViewBag.HoursListened ?? 0)</h2>
                     </div>
                 </div>
             </div>
             <div class="col-md-6 mb-4">
                 <div class="card stat-card">
                     <div class="card-body text-center">
-                        <i class="fas fa-heart fa-2x text-danger mb-2"></i>
-                        <h5>Favorites</h5>
-                        <h2 class="text-danger">89</h2>
+                        <i class="fas fa-eye fa-2x text-warning mb-2"></i>
+                        <h5>Total Views</h5>
+                        <h2 class="text-warning">@(ViewBag.TotalViews ?? 0)</h2>
                     </div>
                 </div>
             </div>
@@ -116,35 +116,63 @@
                 <h5><i class="fas fa-history"></i> Recent Activity</h5>
             </div>
             <div class="card-body">
-                <div class="activity-item">
-                    <div class="activity-icon">
-                        <i class="fas fa-play text-primary"></i>
-                    </div>
-                    <div class="activity-content">
-                        <strong>Played "Bohemian Rhapsody"</strong>
-                        <br><small class="text-muted">by Queen • 2 hours ago</small>
-                    </div>
-                </div>
-                <div class="activity-item">
-                    <div class="activity-icon">
-                        <i class="fas fa-plus text-success"></i>
-                    </div>
-                    <div class="activity-content">
-                        <strong>Created playlist "Road Trip Mix"</strong>
-                        <br><small class="text-muted">1 day ago</small>
-                    </div>
-                </div>
-                <div class="activity-item">
-                    <div class="activity-icon">
-                        <i class="fas fa-heart text-danger"></i>
-                    </div>
-                    <div class="activity-content">
-                        <strong>Liked "Imagine"</strong>
-                        <br><small class="text-muted">by John Lennon • 2 days ago</small>
-                    </div>
-                </div>
+                @if (ViewBag.RecentActivity != null && ((List<dynamic>)ViewBag.RecentActivity).Count > 0)
+                {
+                    @foreach (var activity in (List<dynamic>)ViewBag.RecentActivity)
+                    {
+                        <div class="activity-item mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="activity-icon me-3">
+                                    <i class="fas fa-play text-primary"></i>
+                                </div>
+                                <div class="activity-content">
+                                    <strong>Played "@activity.SongTitle"</strong>
+                                    <br><small class="text-muted">@((DateTime)activity.PlaybackDate).ToString("MMM dd, yyyy HH:mm")</small>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <p class="text-muted">No recent activity</p>
+                }
             </div>
         </div>
+
+        <!-- Si el usuario es Artist, agregar sección de sus canciones -->
+        @if (User.IsInRole("Artist"))
+        {
+            <div class="card mt-4">
+                <div class="card-header d-flex justify-content-between">
+                    <h5><i class="fas fa-music"></i> My Songs</h5>
+                    <a asp-controller="Songs" asp-action="Create" class="btn btn-sm btn-primary">
+                        <i class="fas fa-plus"></i> Add Song
+                    </a>
+                </div>
+                <div class="card-body">
+                    @if (ViewBag.UserSongs != null && ((List<dynamic>)ViewBag.UserSongs).Count > 0)
+                    {
+                        @foreach (var song in (List<dynamic>)ViewBag.UserSongs)
+                        {
+                            <div class="d-flex justify-content-between align-items-center mb-2 p-2 border-bottom">
+                                <div>
+                                    <strong>@song.Title</strong>
+                                    <br><small class="text-muted">@song.Genre • @song.PlayCount plays</small>
+                                </div>
+                                <div>
+                                    <a asp-controller="Songs" asp-action="Edit" asp-route-id="@song.Id" class="btn btn-sm btn-outline-primary">Edit</a>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p class="text-muted">No songs uploaded yet</p>
+                    }
+                </div>
+            </div>
+        }
     </div>
 </div>
 
@@ -154,4 +182,78 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="editProfileModalLabel">
-                    <i class="fas fa-
+                    <i class="fas fa-edit"></i> Edit Profile
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editProfileForm">
+                    <div class="mb-3">
+                        <label for="editName" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="editName" value="@Model.Name">
+                    </div>
+                    <div class="mb-3">
+                        <label for="editBio" class="form-label">Bio</label>
+                        <textarea class="form-control" id="editBio" rows="3">@Model.Bio</textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveProfile()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .profile-avatar {
+        margin-bottom: 20px;
+    }
+
+    .stat-card {
+        transition: transform 0.2s;
+        border: none;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+    .activity-item {
+        padding: 10px 0;
+        border-bottom: 1px solid #eee;
+    }
+
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+
+    .activity-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .info-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+        .info-item i {
+            margin-top: 2px;
+        }
+</style>
+
+<script>
+    function saveProfile() {
+        // Aquí puedes implementar la funcionalidad para guardar el perfil
+        alert('Profile update functionality would go here');
+    }
+</script>

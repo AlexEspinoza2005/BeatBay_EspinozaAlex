@@ -22,21 +22,21 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<BeatBayDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("BeatBayDbContext")));
 
-// Configurar Identity con roles personalizados, confirmación de cuenta y correo único
+// Configurar Identity con roles personalizados, confirmaciï¿½n de cuenta y correo ï¿½nico
 builder.Services.AddIdentity<User, Role>(options =>
 {
     options.SignIn.RequireConfirmedAccount = true;
     options.User.RequireUniqueEmail = true; // Evita registros con el mismo correo
 
-    // Configuración de contraseña
+    // Configuraciï¿½n de contraseï¿½a
     options.Password.RequireDigit = true;
     options.Password.RequireLowercase = true;
     options.Password.RequireUppercase = false;
     options.Password.RequireNonAlphanumeric = false;
     options.Password.RequiredLength = 6;
 
-    // Configuración de lockout
-    options.Lockout.MaxFailedAccessAttempts = 5;  // Número máximo de intentos fallidos antes de bloquear la cuenta
+    // Configuraciï¿½n de lockout
+    options.Lockout.MaxFailedAccessAttempts = 5;  // Nï¿½mero mï¿½ximo de intentos fallidos antes de bloquear la cuenta
     options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(1);  // Tiempo de bloqueo (1 minuto)
     options.Lockout.AllowedForNewUsers = true;  // Permite el lockout para usuarios nuevos
 })
@@ -47,7 +47,7 @@ builder.Services.AddIdentity<User, Role>(options =>
 builder.Services.AddTransient<IEmailSender, EmailService>();
 builder.Services.AddScoped<IJwtService, JwtService>(); // Registrar JWT Service
 
-// Configuración de autenticación JWT
+// Configuraciï¿½n de autenticaciï¿½n JWT
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -69,7 +69,7 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// Configuración de CORS para permitir el acceso desde el frontend MVC
+// Configuraciï¿½n de CORS para permitir el acceso desde el frontend MVC
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowWeb",
@@ -84,7 +84,7 @@ builder.Services.AddHttpContextAccessor();
 
 var app = builder.Build();
 
-// Configuración del middleware
+// Configuraciï¿½n del middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -95,14 +95,14 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseStaticFiles();  // Si necesitas servir archivos estáticos
+app.UseStaticFiles();  // Si necesitas servir archivos estï¿½ticos
 
 app.UseRouting();
 
-// Configuración de CORS
+// Configuraciï¿½n de CORS
 app.UseCors("AllowWeb");
 
-// Middleware para autenticación y autorización
+// Middleware para autenticaciï¿½n y autorizaciï¿½n
 app.UseAuthentication();
 app.UseAuthorization();
 
