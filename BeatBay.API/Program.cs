@@ -1,12 +1,13 @@
+using BeatBay.API.Settings;
+using BeatBay.Data;
+using BeatBay.Model;
+using BeatBay.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
-using BeatBay.Data;
-using BeatBay.Model;
-using BeatBay.Services;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -69,6 +70,11 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+//agregar para azure
+
+builder.Services.Configure<AzureBlobStorageSettings>(builder.Configuration.GetSection("AzureBlobStorageSettings"));
+
+
 // Configuraci�n de CORS para permitir el acceso desde el frontend MVC
 builder.Services.AddCors(options =>
 {
@@ -93,6 +99,7 @@ if (app.Environment.IsDevelopment())
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "BeatBay API V1");
     });
 }
+
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();  // Si necesitas servir archivos est�ticos

@@ -1,166 +1,44 @@
 ﻿@model BeatBay.DTOs.CreateSongDto
 
 @{
-    ViewData["Title"] = "Agregar Canción";
+    ViewData["Title"] = "Subir Canción";
 }
 
-<div class="container mt-4">
-    <div class="row justify-content-center">
-        <div class="col-md-8">
-            <div class="card">
-                <div class="card-header">
-                    <h4 class="mb-0">@ViewData["Title"]</h4>
-                </div>
-                <div class="card-body">
-                    @if (ViewBag.Error != null)
-                    {
-                        <div class="alert alert-danger">@ViewBag.Error</div>
-                    }
+<h2>Subir Nueva Canción</h2>
 
-                    <form asp-action="Create" method="post" enctype="multipart/form-data">
-                        @Html.AntiForgeryToken()
+@if (ViewBag.Error != null)
+{
+    <div class="alert alert-danger">@ViewBag.Error</div>
+}
 
-                        <div class="mb-3">
-                            <label asp-for="Title" class="form-label">Título de la canción</label>
-                            <input asp-for="Title" class="form-control" placeholder="Ingrese el título de la canción">
-                            <span asp-validation-for="Title" class="text-danger"></span>
-                        </div>
-
-                        <div class="mb-3">
-                            <label asp-for="Genre" class="form-label">Género</label>
-                            <select asp-for="Genre" class="form-select">
-                                <option value="">Seleccione un género</option>
-                                <option value="Pop">Pop</option>
-                                <option value="Rock">Rock</option>
-                                <option value="Hip Hop">Hip Hop</option>
-                                <option value="Jazz">Jazz</option>
-                                <option value="Classical">Clásica</option>
-                                <option value="Electronic">Electrónica</option>
-                                <option value="Country">Country</option>
-                                <option value="R&B">R&B</option>
-                                <option value="Reggae">Reggae</option>
-                                <option value="Folk">Folk</option>
-                                <option value="Blues">Blues</option>
-                                <option value="Alternative">Alternativo</option>
-                                <option value="Indie">Indie</option>
-                                <option value="Latin">Latino</option>
-                                <option value="Other">Otro</option>
-                            </select>
-                            <span asp-validation-for="Genre" class="text-danger"></span>
-                        </div>
-
-                        <div class="mb-3">
-                            <label asp-for="Duration" class="form-label">Duración (segundos)</label>
-                            <input asp-for="Duration" type="number" class="form-control" min="1" placeholder="Duración en segundos">
-                            <span asp-validation-for="Duration" class="text-danger"></span>
-                            <div class="form-text">Ingrese la duración aproximada en segundos (ej: 210 para 3:30)</div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="audioFile" class="form-label">Archivo de Audio</label>
-                            <input type="file" class="form-control" id="audioFile" name="audioFile" accept=".mp3,.wav,.flac,.m4a" required>
-                            <div class="form-text">
-                                Formatos soportados: MP3, WAV, FLAC, M4A. Tamaño máximo: 50MB.
-                            </div>
-                        </div>
-
-                        <div class="mb-3" id="audio-preview" style="display: none;">
-                            <label class="form-label">Vista previa:</label>
-                            <audio controls class="form-control" id="preview-audio">
-                                Tu navegador no soporta el elemento audio.
-                            </audio>
-                        </div>
-
-                        <div class="d-flex justify-content-between">
-                            <a asp-action="Index" class="btn btn-secondary">
-                                <i class="fas fa-arrow-left"></i> Cancelar
-                            </a>
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-upload"></i> Subir Canción
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
+<form asp-action="Create" enctype="multipart/form-data" method="post">
+    <div class="form-group">
+        <label asp-for="Title"></label>
+        <input asp-for="Title" class="form-control" />
+        <span asp-validation-for="Title" class="text-danger"></span>
     </div>
-</div>
+
+    <div class="form-group">
+        <label asp-for="Duration"></label>
+        <input asp-for="Duration" class="form-control" type="time" step="1" />
+        <span asp-validation-for="Duration" class="text-danger"></span>
+    </div>
+
+    <div class="form-group">
+        <label asp-for="Genre"></label>
+        <input asp-for="Genre" class="form-control" />
+        <span asp-validation-for="Genre" class="text-danger"></span>
+    </div>
+
+    <div class="form-group">
+        <label for="audioFile">Archivo de audio</label>
+        <input type="file" name="audioFile" class="form-control" accept=".mp3,.wav,.flac,.m4a" required />
+    </div>
+
+    <button type="submit" class="btn btn-success">Subir Canción</button>
+    <a asp-action="Index" class="btn btn-secondary">Cancelar</a>
+</form>
 
 @section Scripts {
-    @{
-        await Html.RenderPartialAsync("_ValidationScriptsPartial");
-    }
-
-    <script>
-        document.getElementById('audioFile').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            const previewDiv = document.getElementById('audio-preview');
-            const previewAudio = document.getElementById('preview-audio');
-            const durationInput = document.getElementById('Duration');
-
-            if (file) {
-                // Validar tipo de archivo
-                const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/flac', 'audio/mp4'];
-                if (!allowedTypes.includes(file.type)) {
-                    alert('Formato de archivo no soportado. Solo se permiten: MP3, WAV, FLAC, M4A');
-                    e.target.value = '';
-                    previewDiv.style.display = 'none';
-                    return;
-                }
-
-                // Validar tamaño (50MB = 50 * 1024 * 1024 bytes)
-                if (file.size > 50 * 1024 * 1024) {
-                    alert('El archivo es demasiado grande. El tamaño máximo es 50MB.');
-                    e.target.value = '';
-                    previewDiv.style.display = 'none';
-                    return;
-                }
-
-                // Crear URL para preview
-                const fileURL = URL.createObjectURL(file);
-                previewAudio.src = fileURL;
-                previewDiv.style.display = 'block';
-
-                // Auto-detectar duración
-                previewAudio.addEventListener('loadedmetadata', function() {
-                    if (durationInput.value === '' || durationInput.value === '0') {
-                        durationInput.value = Math.round(previewAudio.duration);
-                    }
-                });
-
-                // Cleanup URL cuando se cambie el archivo
-                previewAudio.addEventListener('load', function() {
-                    URL.revokeObjectURL(fileURL);
-                });
-            } else {
-                previewDiv.style.display = 'none';
-                previewAudio.src = '';
-            }
-        });
-
-        // Validación adicional al enviar el formulario
-        document.querySelector('form').addEventListener('submit', function(e) {
-            const audioFile = document.getElementById('audioFile').files[0];
-            const title = document.getElementById('Title').value.trim();
-            const duration = document.getElementById('Duration').value;
-
-            if (!audioFile) {
-                e.preventDefault();
-                alert('Debe seleccionar un archivo de audio.');
-                return;
-            }
-
-            if (!title) {
-                e.preventDefault();
-                alert('Debe ingresar un título para la canción.');
-                return;
-            }
-
-            if (!duration || duration <= 0) {
-                e.preventDefault();
-                alert('Debe ingresar una duración válida.');
-                return;
-            }
-        });
-    </script>
+    <partial name="_ValidationScriptsPartial" />
 }

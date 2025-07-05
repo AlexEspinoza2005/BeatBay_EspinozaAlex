@@ -1,5 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
-using BeatBay.Model;
+﻿using System;
+using System.ComponentModel.DataAnnotations;
 
 namespace BeatBay.DTOs
 {
@@ -9,7 +9,7 @@ namespace BeatBay.DTOs
         public string Title { get; set; }
         public TimeSpan Duration { get; set; }
         public string? Genre { get; set; }
-        public string StreamingUrl { get; set; }
+        public string StreamingUrl { get; set; } 
         public int ArtistId { get; set; }
         public string ArtistName { get; set; }
         public bool IsActive { get; set; }
