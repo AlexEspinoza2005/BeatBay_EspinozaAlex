@@ -2,6 +2,7 @@
 using BeatBay.DTOs;
 using BeatBay.Data;
 using BeatBay.Model;
+using BeatBay.API.Settings; 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -22,14 +23,15 @@ namespace BeatBay.API.Controllers
     {
         private readonly BeatBayDbContext _context;
         private readonly BlobContainerClient _blobContainerClient;
+        private readonly AzureBlobStorageSettings _blobSettings;
 
         public SongsController(BeatBayDbContext context, IOptions<AzureBlobStorageSettings> blobSettings)
         {
             _context = context;
+            _blobSettings = blobSettings.Value;
 
-            // Crear BlobContainerClient con la URL SAS de tu contenedor, por url sin json
-            _blobContainerClient = new BlobContainerClient(new Uri("https://musicauploadalex.blob.core.windows.net/audios?sp=racwdli&st=2025-07-04T01:33:25Z&se=2025-07-04T09:33:25Z&sv=2024-11-04&sr=c&sig=DwX%2BQqu4nfqmW1hMi7pZ9TS0SuvZX4l55Wgr9UWsK6Q%3D"));
-
+            // Crear BlobContainerClient usando la configuración del JSON
+            _blobContainerClient = new BlobContainerClient(new Uri(_blobSettings.ContainerUrl));
         }
 
         // GET: api/songs?isActive=true
@@ -91,7 +93,7 @@ namespace BeatBay.API.Controllers
 
         // POST: api/songs
         [HttpPost]
-       // [Authorize(Roles = "Artist,Admin")]
+        // [Authorize(Roles = "Artist,Admin")]
         public async Task<ActionResult<SongDto>> CreateSong([FromForm] CreateSongDto dto, IFormFile audioFile)
         {
             if (audioFile == null || audioFile.Length == 0)
@@ -110,14 +112,17 @@ namespace BeatBay.API.Controllers
                 // Subir archivo a Azure Blob Storage
                 var blobClient = _blobContainerClient.GetBlobClient(uniqueFileName);
                 using var stream = audioFile.OpenReadStream();
-                await blobClient.UploadAsync(stream);
+                await blobClient.UploadAsync(stream, overwrite: true);
 
                 var streamingUrl = blobClient.Uri.ToString();
 
-                // Obtener el ArtistId desde el token
-                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (!int.TryParse(userIdClaim, out int artistId))
-                    return Unauthorized("No se pudo obtener el ID del artista.");
+                // Obtener el ArtistId desde el token (por ahora usar un ID fijo para testing)
+                // var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                // if (!int.TryParse(userIdClaim, out int artistId))
+                //     return Unauthorized("No se pudo obtener el ID del artista.");
+
+                // ID temporal para testing - cámbialo por un ID que exista en tu base de datos
+                int artistId = 1;
 
                 var song = new Song
                 {
@@ -133,6 +138,9 @@ namespace BeatBay.API.Controllers
                 _context.Songs.Add(song);
                 await _context.SaveChangesAsync();
 
+                // Obtener el nombre del artista para la respuesta
+                var artist = await _context.Users.FindAsync(artistId);
+
                 var songDto = new SongDto
                 {
                     Id = song.Id,
@@ -141,7 +149,7 @@ namespace BeatBay.API.Controllers
                     Genre = song.Genre,
                     StreamingUrl = song.StreamingUrl,
                     ArtistId = song.ArtistId,
-                    ArtistName = null, // Opcional: puedes cargar nombre si quieres
+                    ArtistName = artist?.Name ?? artist?.UserName,
                     IsActive = song.IsActive,
                     UploadedAt = song.UploadedAt,
                     PlayCount = 0
@@ -157,21 +165,22 @@ namespace BeatBay.API.Controllers
 
         // PUT: api/songs/5
         [HttpPut("{id}")]
-        [Authorize(Roles = "Artist,Admin")]
+        // [Authorize(Roles = "Artist,Admin")]
         public async Task<IActionResult> UpdateSong(int id, UpdateSongDto dto)
         {
             var song = await _context.Songs.FindAsync(id);
             if (song == null)
                 return NotFound();
 
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!int.TryParse(userIdClaim, out int userId))
-                return Unauthorized();
+            // Verificaciones temporalmente deshabilitadas para testing
+            // var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            // if (!int.TryParse(userIdClaim, out int userId))
+            //     return Unauthorized();
 
-            bool isAdmin = User.IsInRole("Admin");
+            // bool isAdmin = User.IsInRole("Admin");
 
-            if (song.ArtistId != userId && !isAdmin)
-                return Forbid();
+            // if (song.ArtistId != userId && !isAdmin)
+            //     return Forbid();
 
             if (!string.IsNullOrWhiteSpace(dto.Title))
                 song.Title = dto.Title;
@@ -194,45 +203,40 @@ namespace BeatBay.API.Controllers
 
         // DELETE: api/songs/5
         [HttpDelete("{id}")]
-        [Authorize(Roles = "Artist,Admin")]
+        // [Authorize(Roles = "Artist,Admin")]
         public async Task<IActionResult> DeleteSong(int id)
         {
             var song = await _context.Songs.FindAsync(id);
             if (song == null)
                 return NotFound();
 
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!int.TryParse(userIdClaim, out int userId))
-                return Unauthorized();
+            // Verificaciones temporalmente deshabilitadas para testing
+            // var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            // if (!int.TryParse(userIdClaim, out int userId))
+            //     return Unauthorized();
 
-            bool isAdmin = User.IsInRole("Admin");
+            // bool isAdmin = User.IsInRole("Admin");
 
-            if (song.ArtistId != userId && !isAdmin)
-                return Forbid();
+            // if (song.ArtistId != userId && !isAdmin)
+            //     return Forbid();
 
             song.IsActive = false;
             await _context.SaveChangesAsync();
 
-            // Opcional: registrar log si lo borró un admin distinto al artista
-            if (isAdmin && song.ArtistId != userId)
-            {
-                var log = new AdminActionLog
-                {
-                    AdminUserId = userId,
-                    ActionType = "Delete Song",
-                    Description = $"Deactivated song: {song.Title}"
-                };
-                _context.AdminActionLogs.Add(log);
-                await _context.SaveChangesAsync();
-            }
+            // Log temporalmente deshabilitado
+            // if (isAdmin && song.ArtistId != userId)
+            // {
+            //     var log = new AdminActionLog
+            //     {
+            //         AdminUserId = userId,
+            //         ActionType = "Delete Song",
+            //         Description = $"Deactivated song: {song.Title}"
+            //     };
+            //     _context.AdminActionLogs.Add(log);
+            //     await _context.SaveChangesAsync();
+            // }
 
             return Ok(new { message = "Canción desactivada correctamente" });
         }
-    }
-
-    // Clase para inyectar configuración de Azure Blob
-    public class AzureBlobStorageSettings
-    {
-        public string ContainerUrl { get; set; }
     }
 }
