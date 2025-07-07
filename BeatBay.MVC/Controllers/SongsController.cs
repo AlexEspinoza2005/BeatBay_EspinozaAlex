@@ -3,6 +3,8 @@ using BeatBay.DTOs;
 using Newtonsoft.Json;
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 
 namespace BeatBayMVC.Controllers
 {
@@ -31,6 +33,75 @@ namespace BeatBayMVC.Controllers
             }
         }
 
+        private async Task<bool> IsUserLoggedInAsync()
+        {
+            var token = HttpContext.Session.GetString("JwtToken");
+            if (string.IsNullOrEmpty(token))
+                return false;
+
+            try
+            {
+                AddAuthHeader();
+                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/auth/profile");
+                return response.IsSuccessStatusCode;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async Task<UserDto?> GetCurrentUserAsync()
+        {
+            var token = HttpContext.Session.GetString("JwtToken");
+            if (string.IsNullOrEmpty(token))
+                return null;
+
+            try
+            {
+                AddAuthHeader();
+                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/auth/profile");
+                if (!response.IsSuccessStatusCode)
+                    return null;
+
+                var json = await response.Content.ReadAsStringAsync();
+                return JsonConvert.DeserializeObject<UserDto>(json);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private async Task<List<string>> GetUserRolesAsync()
+        {
+            var token = HttpContext.Session.GetString("JwtToken");
+            if (string.IsNullOrEmpty(token))
+                return new List<string>();
+
+            try
+            {
+                AddAuthHeader();
+                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/auth/user-roles");
+
+                if (!response.IsSuccessStatusCode)
+                    return new List<string>();
+
+                var json = await response.Content.ReadAsStringAsync();
+                return JsonConvert.DeserializeObject<List<string>>(json) ?? new List<string>();
+            }
+            catch
+            {
+                return new List<string>();
+            }
+        }
+
+        private async Task<bool> UserHasRoleAsync(string role)
+        {
+            var userRoles = await GetUserRolesAsync();
+            return userRoles.Contains(role);
+        }
+
         // GET: Songs
         public async Task<IActionResult> Index()
         {
@@ -42,6 +113,12 @@ namespace BeatBayMVC.Controllers
 
                 var json = await response.Content.ReadAsStringAsync();
                 var songs = JsonConvert.DeserializeObject<List<SongDto>>(json);
+
+                // Verificar si el usuario está logueado para mostrar opciones adicionales
+                ViewBag.IsLoggedIn = await IsUserLoggedInAsync();
+                ViewBag.IsArtist = await UserHasRoleAsync("Artist");
+                ViewBag.IsAdmin = await UserHasRoleAsync("Admin");
+
                 return View(songs);
             }
             catch
@@ -61,6 +138,19 @@ namespace BeatBayMVC.Controllers
 
                 var json = await response.Content.ReadAsStringAsync();
                 var song = JsonConvert.DeserializeObject<SongDto>(json);
+
+                // Verificar permisos para editar/eliminar
+                var currentUser = await GetCurrentUserAsync();
+                ViewBag.CanEdit = false;
+                ViewBag.CanDelete = false;
+
+                if (currentUser != null)
+                {
+                    ViewBag.CanEdit = await UserHasRoleAsync("Admin") ||
+                                     (await UserHasRoleAsync("Artist") && song.ArtistId == currentUser.Id);
+                    ViewBag.CanDelete = ViewBag.CanEdit;
+                }
+
                 return View(song);
             }
             catch
@@ -70,8 +160,20 @@ namespace BeatBayMVC.Controllers
         }
 
         // GET: Songs/Create
-        public IActionResult Create()
+        public async Task<IActionResult> Create()
         {
+            if (!await IsUserLoggedInAsync())
+            {
+                TempData["Error"] = "Debes iniciar sesión para crear canciones.";
+                return RedirectToAction("Login", "Auth");
+            }
+
+            if (!await UserHasRoleAsync("Artist") && !await UserHasRoleAsync("Admin"))
+            {
+                TempData["Error"] = "Debes ser artista o administrador para crear canciones.";
+                return RedirectToAction(nameof(Index));
+            }
+
             return View();
         }
 
@@ -79,6 +181,18 @@ namespace BeatBayMVC.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create(CreateSongDto dto, IFormFile audioFile)
         {
+            if (!await IsUserLoggedInAsync())
+            {
+                TempData["Error"] = "Debes iniciar sesión para crear canciones.";
+                return RedirectToAction("Login", "Auth");
+            }
+
+            if (!await UserHasRoleAsync("Artist") && !await UserHasRoleAsync("Admin"))
+            {
+                TempData["Error"] = "Debes ser artista o administrador para crear canciones.";
+                return RedirectToAction(nameof(Index));
+            }
+
             if (!ModelState.IsValid)
                 return View(dto);
 
@@ -88,10 +202,27 @@ namespace BeatBayMVC.Controllers
                 return View(dto);
             }
 
+            // Validar tamaño del archivo (máximo 50MB)
+            if (audioFile.Length > 50 * 1024 * 1024)
+            {
+                ModelState.AddModelError("", "El archivo no puede ser mayor a 50MB.");
+                return View(dto);
+            }
+
+            // Validar extensiones permitidas
+            var allowedExtensions = new[] { ".mp3", ".wav", ".flac", ".m4a" };
+            var fileExtension = Path.GetExtension(audioFile.FileName).ToLower();
+            if (!allowedExtensions.Contains(fileExtension))
+            {
+                ModelState.AddModelError("", "Formato de archivo no soportado. Solo se permiten: mp3, wav, flac, m4a");
+                return View(dto);
+            }
+
             try
             {
-                using var content = new MultipartFormDataContent();
+                AddAuthHeader();
 
+                using var content = new MultipartFormDataContent();
                 content.Add(new StringContent(dto.Title), nameof(dto.Title));
                 content.Add(new StringContent(dto.Duration.ToString()), nameof(dto.Duration));
                 content.Add(new StringContent(dto.Genre ?? ""), nameof(dto.Genre));
@@ -118,15 +249,18 @@ namespace BeatBayMVC.Controllers
             }
         }
 
-
         // GET: Songs/Edit/5
         public async Task<IActionResult> Edit(int id)
         {
-            AddAuthHeader();
+            if (!await IsUserLoggedInAsync())
+            {
+                TempData["Error"] = "Debes iniciar sesión para editar canciones.";
+                return RedirectToAction("Login", "Auth");
+            }
 
             if (!await UserHasRoleAsync("Artist") && !await UserHasRoleAsync("Admin"))
             {
-                TempData["Error"] = "Debes ser artista o admin para editar canciones.";
+                TempData["Error"] = "Debes ser artista o administrador para editar canciones.";
                 return RedirectToAction(nameof(Index));
             }
 
@@ -139,6 +273,17 @@ namespace BeatBayMVC.Controllers
                 var json = await response.Content.ReadAsStringAsync();
                 var song = JsonConvert.DeserializeObject<SongDto>(json);
 
+                // Verificar permisos
+                var currentUser = await GetCurrentUserAsync();
+                var isAdmin = await UserHasRoleAsync("Admin");
+                var isOwner = currentUser != null && song.ArtistId == currentUser.Id;
+
+                if (!isAdmin && !isOwner)
+                {
+                    TempData["Error"] = "No tienes permisos para editar esta canción.";
+                    return RedirectToAction(nameof(Details), new { id });
+                }
+
                 var updateDto = new UpdateSongDto
                 {
                     Title = song.Title,
@@ -149,6 +294,7 @@ namespace BeatBayMVC.Controllers
                 };
 
                 ViewBag.SongId = id;
+                ViewBag.SongTitle = song.Title;
                 return View(updateDto);
             }
             catch
@@ -162,22 +308,28 @@ namespace BeatBayMVC.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Edit(int id, UpdateSongDto dto)
         {
+            if (!await IsUserLoggedInAsync())
+            {
+                TempData["Error"] = "Debes iniciar sesión para editar canciones.";
+                return RedirectToAction("Login", "Auth");
+            }
+
+            if (!await UserHasRoleAsync("Artist") && !await UserHasRoleAsync("Admin"))
+            {
+                TempData["Error"] = "Debes ser artista o administrador para editar canciones.";
+                return RedirectToAction(nameof(Index));
+            }
+
             if (!ModelState.IsValid)
             {
                 ViewBag.SongId = id;
                 return View(dto);
             }
 
-            AddAuthHeader();
-
-            if (!await UserHasRoleAsync("Artist") && !await UserHasRoleAsync("Admin"))
-            {
-                TempData["Error"] = "Debes ser artista o admin para editar canciones.";
-                return RedirectToAction(nameof(Index));
-            }
-
             try
             {
+                AddAuthHeader();
+
                 var json = JsonConvert.SerializeObject(dto);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
@@ -185,7 +337,7 @@ namespace BeatBayMVC.Controllers
                 if (response.IsSuccessStatusCode)
                 {
                     TempData["Success"] = "Canción actualizada exitosamente.";
-                    return RedirectToAction(nameof(Index));
+                    return RedirectToAction(nameof(Details), new { id });
                 }
 
                 var error = await response.Content.ReadAsStringAsync();
@@ -204,11 +356,15 @@ namespace BeatBayMVC.Controllers
         // GET: Songs/Delete/5
         public async Task<IActionResult> Delete(int id)
         {
-            AddAuthHeader();
+            if (!await IsUserLoggedInAsync())
+            {
+                TempData["Error"] = "Debes iniciar sesión para eliminar canciones.";
+                return RedirectToAction("Login", "Auth");
+            }
 
             if (!await UserHasRoleAsync("Artist") && !await UserHasRoleAsync("Admin"))
             {
-                TempData["Error"] = "Debes ser artista o admin para eliminar canciones.";
+                TempData["Error"] = "Debes ser artista o administrador para eliminar canciones.";
                 return RedirectToAction(nameof(Index));
             }
 
@@ -220,6 +376,18 @@ namespace BeatBayMVC.Controllers
 
                 var json = await response.Content.ReadAsStringAsync();
                 var song = JsonConvert.DeserializeObject<SongDto>(json);
+
+                // Verificar permisos
+                var currentUser = await GetCurrentUserAsync();
+                var isAdmin = await UserHasRoleAsync("Admin");
+                var isOwner = currentUser != null && song.ArtistId == currentUser.Id;
+
+                if (!isAdmin && !isOwner)
+                {
+                    TempData["Error"] = "No tienes permisos para eliminar esta canción.";
+                    return RedirectToAction(nameof(Details), new { id });
+                }
+
                 return View(song);
             }
             catch
@@ -233,16 +401,22 @@ namespace BeatBayMVC.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {
-            AddAuthHeader();
+            if (!await IsUserLoggedInAsync())
+            {
+                TempData["Error"] = "Debes iniciar sesión para eliminar canciones.";
+                return RedirectToAction("Login", "Auth");
+            }
 
             if (!await UserHasRoleAsync("Artist") && !await UserHasRoleAsync("Admin"))
             {
-                TempData["Error"] = "Debes ser artista o admin para eliminar canciones.";
+                TempData["Error"] = "Debes ser artista o administrador para eliminar canciones.";
                 return RedirectToAction(nameof(Index));
             }
 
             try
             {
+                AddAuthHeader();
+
                 var response = await _httpClient.DeleteAsync($"{_apiBaseUrl}/songs/{id}");
                 if (response.IsSuccessStatusCode)
                 {
@@ -250,7 +424,8 @@ namespace BeatBayMVC.Controllers
                 }
                 else
                 {
-                    TempData["Error"] = "Error al eliminar la canción.";
+                    var error = await response.Content.ReadAsStringAsync();
+                    TempData["Error"] = $"Error al eliminar la canción: {error}";
                 }
             }
             catch (Exception ex)
@@ -261,26 +436,39 @@ namespace BeatBayMVC.Controllers
             return RedirectToAction(nameof(Index));
         }
 
-        private async Task<bool> UserHasRoleAsync(string role)
+        // GET: Songs/MySongs (Para que los artistas vean sus propias canciones)
+        public async Task<IActionResult> MySongs()
         {
-            AddAuthHeader();
+            if (!await IsUserLoggedInAsync())
+            {
+                TempData["Error"] = "Debes iniciar sesión para ver tus canciones.";
+                return RedirectToAction("Login", "Auth");
+            }
 
-            var response = await _httpClient.GetAsync($"{_apiBaseUrl}/auth/profile");
-            if (!response.IsSuccessStatusCode) return false;
+            if (!await UserHasRoleAsync("Artist") && !await UserHasRoleAsync("Admin"))
+            {
+                TempData["Error"] = "Debes ser artista para acceder a esta sección.";
+                return RedirectToAction(nameof(Index));
+            }
 
-            var json = await response.Content.ReadAsStringAsync();
-            var userProfile = JsonConvert.DeserializeObject<UserProfileDto>(json);
+            try
+            {
+                AddAuthHeader();
+                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/songs/my-songs");
 
-            if (userProfile?.Roles == null) return false;
+                if (!response.IsSuccessStatusCode)
+                    return View(new List<SongDto>());
 
-            return userProfile.Roles.Contains(role);
+                var json = await response.Content.ReadAsStringAsync();
+                var songs = JsonConvert.DeserializeObject<List<SongDto>>(json);
+
+                ViewBag.IsMysongsPage = true;
+                return View("Index", songs);
+            }
+            catch
+            {
+                return View("Index", new List<SongDto>());
+            }
         }
-    }
-
-    public class UserProfileDto
-    {
-        public int Id { get; set; }
-        public string? UserName { get; set; }
-        public List<string>? Roles { get; set; }
     }
 }

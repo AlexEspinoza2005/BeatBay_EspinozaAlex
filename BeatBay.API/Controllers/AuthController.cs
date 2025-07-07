@@ -429,5 +429,31 @@ El equipo de BeatBay";
 
             return Ok(new { message = "User deactivated successfully" });
         }
+
+
+
+
+
+        // Obtener roles del usuario actual
+        [HttpGet("user-roles")]
+        [Authorize]
+        public async Task<ActionResult<List<string>>> GetUserRoles()
+        {
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
+            var user = await _userManager.FindByIdAsync(userId.ToString());
+
+            if (user == null)
+                return NotFound();
+
+            var roles = await _userManager.GetRolesAsync(user);
+            return Ok(roles.ToList());
+        }
+
+
+
+
+
+
+
     }
 }
