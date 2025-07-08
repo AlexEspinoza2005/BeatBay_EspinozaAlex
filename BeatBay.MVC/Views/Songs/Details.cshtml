@@ -1,7 +1,6 @@
 ﻿@model BeatBay.DTOs.SongDto
 
 <h2>Detalles de la Canción</h2>
-
 <div>
     <h4>@Model.Title</h4>
     <p><strong>Duración:</strong> @Model.Duration</p>
@@ -10,10 +9,37 @@
     <p><strong>Estado:</strong> @(Model.IsActive ? "Activa" : "Inactiva")</p>
     <p><strong>Fecha de subida:</strong> @Model.UploadedAt.ToLocalTime().ToString("g")</p>
     <p><strong>Reproducciones:</strong> @Model.PlayCount</p>
-    <audio controls>
-        <source src="@Model.StreamingUrl" />
-        Tu navegador no soporta reproducción de audio.
-    </audio>
+
+    <div>
+        <audio controls id="audioPlayer">
+            <source src="@Model.StreamingUrl" />
+            Tu navegador no soporta reproducción de audio.
+        </audio>
+        <br><br>
+        <button id="loopBtn" onclick="toggleLoop()">🔁 Loop: OFF</button>
+    </div>
 </div>
 
 <a asp-action="Index" class="btn btn-secondary mt-3">Volver al listado</a>
+
+<script>
+    let isLooping = false;
+
+    function toggleLoop() {
+        const audio = document.getElementById('audioPlayer');
+        const loopBtn = document.getElementById('loopBtn');
+
+        isLooping = !isLooping;
+        audio.loop = isLooping;
+
+        if (isLooping) {
+            loopBtn.innerHTML = '🔁 Loop: ON';
+            loopBtn.style.backgroundColor = '#28a745';
+            loopBtn.style.color = 'white';
+        } else {
+            loopBtn.innerHTML = '🔁 Loop: OFF';
+            loopBtn.style.backgroundColor = '';
+            loopBtn.style.color = '';
+        }
+    }
+</script>
