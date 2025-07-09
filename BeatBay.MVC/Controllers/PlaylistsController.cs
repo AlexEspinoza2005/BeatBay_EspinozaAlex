@@ -6,7 +6,6 @@ using System.Text;
 
 namespace BeatBay.MVC.Controllers
 {
-    // QUITAR [Authorize] - SIN VALIDACION DE AUTENTICACION
     public class PlaylistsController : Controller
     {
         private readonly HttpClient _httpClient;
@@ -20,16 +19,57 @@ namespace BeatBay.MVC.Controllers
             _logger = logger;
         }
 
-        // SIMPLIFICAR - NO USAR TOKEN
+        // Mejorado: Validación de token más robusta
         private void AddAuthHeader()
         {
-            // Comentar validacion de token
-            // var token = HttpContext.Session.GetString("JwtToken");
-            // if (!string.IsNullOrEmpty(token))
-            // {
-            //     _httpClient.DefaultRequestHeaders.Authorization =
-            //         new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-            // }
+            var token = HttpContext.Session.GetString("JwtToken");
+            if (!string.IsNullOrEmpty(token))
+            {
+                _httpClient.DefaultRequestHeaders.Clear();
+                _httpClient.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            }
+        }
+
+        // Mejorado: Verificar si el usuario está autenticado
+        private bool IsAuthenticated()
+        {
+            var token = HttpContext.Session.GetString("JwtToken");
+            return !string.IsNullOrEmpty(token);
+        }
+
+        // Método para verificar si el usuario está logueado antes de acciones que requieren auth
+        private IActionResult CheckAuthenticationAndRedirect()
+        {
+            if (!IsAuthenticated())
+            {
+                TempData["Error"] = "Debes iniciar sesión para acceder a esta función.";
+                return RedirectToAction("Login", "Account");
+            }
+            return null;
+        }
+
+        // Método helper para extraer mensajes de error del JSON
+        private async Task<string> ExtractErrorMessage(HttpResponseMessage response)
+        {
+            try
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                var errorObj = JsonConvert.DeserializeObject<dynamic>(content);
+
+                // Intentar obtener el mensaje de diferentes estructuras posibles
+                if (errorObj?.message != null)
+                    return errorObj.message;
+
+                if (errorObj?.Message != null)
+                    return errorObj.Message;
+
+                return content;
+            }
+            catch
+            {
+                return "Error procesando la solicitud.";
+            }
         }
 
         private async Task<T?> ApiGetAsync<T>(string endpoint)
@@ -45,8 +85,14 @@ namespace BeatBay.MVC.Controllers
                     return JsonConvert.DeserializeObject<T>(json);
                 }
 
-                // Simplificar manejo de errores
-                _logger.LogError("Error en API: {StatusCode}", response.StatusCode);
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    // Limpiar sesión y redirigir
+                    HttpContext.Session.Remove("JwtToken");
+                    return default(T);
+                }
+
+                _logger.LogError("Error en API: {StatusCode} - {Content}", response.StatusCode, await response.Content.ReadAsStringAsync());
                 return default(T);
             }
             catch (Exception ex)
@@ -56,7 +102,7 @@ namespace BeatBay.MVC.Controllers
             }
         }
 
-        private async Task<bool> ApiPostAsync<T>(string endpoint, T data)
+        private async Task<ApiResponse<T>> ApiPostAsync<T>(string endpoint, T data)
         {
             try
             {
@@ -65,16 +111,34 @@ namespace BeatBay.MVC.Controllers
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
                 var response = await _httpClient.PostAsync($"{_apiBaseUrl}/{endpoint}", content);
-                return response.IsSuccessStatusCode;
+
+                string errorMessage = null;
+                if (!response.IsSuccessStatusCode)
+                {
+                    errorMessage = await ExtractErrorMessage(response);
+                }
+
+                return new ApiResponse<T>
+                {
+                    IsSuccess = response.IsSuccessStatusCode,
+                    StatusCode = response.StatusCode,
+                    Content = response.IsSuccessStatusCode ? data : default(T),
+                    ErrorMessage = errorMessage
+                };
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error en POST al endpoint de API: {Endpoint}", endpoint);
-                return false;
+                return new ApiResponse<T>
+                {
+                    IsSuccess = false,
+                    StatusCode = System.Net.HttpStatusCode.InternalServerError,
+                    ErrorMessage = ex.Message
+                };
             }
         }
 
-        private async Task<bool> ApiPutAsync<T>(string endpoint, T data)
+        private async Task<ApiResponse<T>> ApiPutAsync<T>(string endpoint, T data)
         {
             try
             {
@@ -83,31 +147,87 @@ namespace BeatBay.MVC.Controllers
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
                 var response = await _httpClient.PutAsync($"{_apiBaseUrl}/{endpoint}", content);
-                return response.IsSuccessStatusCode;
+
+                string errorMessage = null;
+                if (!response.IsSuccessStatusCode)
+                {
+                    errorMessage = await ExtractErrorMessage(response);
+                }
+
+                return new ApiResponse<T>
+                {
+                    IsSuccess = response.IsSuccessStatusCode,
+                    StatusCode = response.StatusCode,
+                    Content = response.IsSuccessStatusCode ? data : default(T),
+                    ErrorMessage = errorMessage
+                };
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error en PUT al endpoint de API: {Endpoint}", endpoint);
-                return false;
+                return new ApiResponse<T>
+                {
+                    IsSuccess = false,
+                    StatusCode = System.Net.HttpStatusCode.InternalServerError,
+                    ErrorMessage = ex.Message
+                };
             }
         }
 
-        private async Task<bool> ApiDeleteAsync(string endpoint)
+        private async Task<ApiResponse<object>> ApiDeleteAsync(string endpoint)
         {
             try
             {
                 AddAuthHeader();
                 var response = await _httpClient.DeleteAsync($"{_apiBaseUrl}/{endpoint}");
-                return response.IsSuccessStatusCode;
+
+                string errorMessage = null;
+                string successMessage = null;
+
+                if (response.IsSuccessStatusCode)
+                {
+                    // Para respuestas exitosas, intentar extraer el mensaje de éxito
+                    try
+                    {
+                        var content = await response.Content.ReadAsStringAsync();
+                        var responseObj = JsonConvert.DeserializeObject<dynamic>(content);
+
+                        if (responseObj?.message != null)
+                            successMessage = responseObj.message;
+                    }
+                    catch
+                    {
+                        // Si no se puede parsear, no es crítico para una respuesta exitosa
+                        successMessage = "Operación completada exitosamente";
+                    }
+                }
+                else
+                {
+                    // Solo extraer mensaje de error para respuestas no exitosas
+                    errorMessage = await ExtractErrorMessage(response);
+                }
+
+                return new ApiResponse<object>
+                {
+                    IsSuccess = response.IsSuccessStatusCode,
+                    StatusCode = response.StatusCode,
+                    ErrorMessage = errorMessage,
+                    SuccessMessage = successMessage
+                };
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error en DELETE al endpoint de API: {Endpoint}", endpoint);
-                return false;
+                return new ApiResponse<object>
+                {
+                    IsSuccess = false,
+                    StatusCode = System.Net.HttpStatusCode.InternalServerError,
+                    ErrorMessage = ex.Message
+                };
             }
         }
 
-        // GET: Playlists - SIN VALIDACION DE LOGIN
+        // GET: Playlists - Públicas, sin autorización
         public async Task<IActionResult> Index()
         {
             try
@@ -123,12 +243,22 @@ namespace BeatBay.MVC.Controllers
             }
         }
 
-        // GET: Playlists/MyPlaylists - SIN VALIDACION DE LOGIN
+        // GET: Playlists/MyPlaylists - Requiere autenticación
         public async Task<IActionResult> MyPlaylists()
         {
+            var authCheck = CheckAuthenticationAndRedirect();
+            if (authCheck != null) return authCheck;
+
             try
             {
-                var playlists = await ApiGetAsync<List<PlaylistDto>>("playlists/my-playlists") ?? new List<PlaylistDto>();
+                var playlists = await ApiGetAsync<List<PlaylistDto>>("playlists/my-playlists");
+
+                if (playlists == null)
+                {
+                    TempData["Error"] = "Error cargando playlists. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+
                 return View(playlists);
             }
             catch (Exception ex)
@@ -139,7 +269,7 @@ namespace BeatBay.MVC.Controllers
             }
         }
 
-        // GET: Playlists/Details/5 - SIN VALIDACION DE LOGIN
+        // GET: Playlists/Details/5 - Público, pero con funcionalidad adicional si está autenticado
         public async Task<IActionResult> Details(int id)
         {
             try
@@ -148,10 +278,13 @@ namespace BeatBay.MVC.Controllers
                 if (playlist == null)
                     return NotFound();
 
-                // Cargar canciones disponibles para agregar
-                var allSongs = await ApiGetAsync<List<SongDto>>("songs?isActive=true") ?? new List<SongDto>();
-                var playlistSongIds = playlist.Songs.Select(s => s.Id).ToHashSet();
-                ViewBag.AvailableSongs = allSongs.Where(s => !playlistSongIds.Contains(s.Id)).ToList();
+                // Cargar canciones disponibles solo si el usuario está autenticado
+                if (IsAuthenticated())
+                {
+                    var allSongs = await ApiGetAsync<List<SongDto>>("songs?isActive=true") ?? new List<SongDto>();
+                    var playlistSongIds = playlist.Songs.Select(s => s.Id).ToHashSet();
+                    ViewBag.AvailableSongs = allSongs.Where(s => !playlistSongIds.Contains(s.Id)).ToList();
+                }
 
                 return View(playlist);
             }
@@ -163,30 +296,43 @@ namespace BeatBay.MVC.Controllers
             }
         }
 
-        // GET: Playlists/Create - SIN VALIDACION DE LOGIN
+        // GET: Playlists/Create - Requiere autenticación
         public async Task<IActionResult> Create()
         {
+            var authCheck = CheckAuthenticationAndRedirect();
+            if (authCheck != null) return authCheck;
+
             return View();
         }
 
-        // POST: Playlists/Create - SIN VALIDACION DE LOGIN
+        // POST: Playlists/Create - Requiere autenticación
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create(CreatePlaylistDto dto)
         {
+            var authCheck = CheckAuthenticationAndRedirect();
+            if (authCheck != null) return authCheck;
+
             if (!ModelState.IsValid)
                 return View(dto);
 
             try
             {
-                var success = await ApiPostAsync("playlists", dto);
-                if (success)
+                var response = await ApiPostAsync("playlists", dto);
+
+                if (response.IsSuccess)
                 {
                     TempData["Success"] = "Playlist creada exitosamente!";
-                    return RedirectToAction(nameof(Index));
+                    return RedirectToAction(nameof(MyPlaylists));
                 }
 
-                ViewBag.Error = "Error creando playlist.";
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+
+                ViewBag.Error = response.ErrorMessage ?? "Error creando playlist.";
                 return View(dto);
             }
             catch (Exception ex)
@@ -197,14 +343,20 @@ namespace BeatBay.MVC.Controllers
             }
         }
 
-        // GET: Playlists/Edit/5 - SIN VALIDACION DE LOGIN
+        // GET: Playlists/Edit/5 - Requiere autenticación y propiedad
         public async Task<IActionResult> Edit(int id)
         {
+            var authCheck = CheckAuthenticationAndRedirect();
+            if (authCheck != null) return authCheck;
+
             try
             {
                 var playlist = await ApiGetAsync<PlaylistDto>($"playlists/{id}");
                 if (playlist == null)
-                    return NotFound();
+                {
+                    TempData["Error"] = "Playlist no encontrada o no tienes permisos para editarla.";
+                    return RedirectToAction(nameof(MyPlaylists));
+                }
 
                 var updateDto = new CreatePlaylistDto { Name = playlist.Name };
                 ViewBag.PlaylistId = id;
@@ -213,16 +365,19 @@ namespace BeatBay.MVC.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error cargando playlist para edición");
-                ViewBag.Error = "Error cargando playlist para edición.";
-                return View();
+                TempData["Error"] = "Error cargando playlist para edición.";
+                return RedirectToAction(nameof(MyPlaylists));
             }
         }
 
-        // POST: Playlists/Edit/5 - SIN VALIDACION DE LOGIN
+        // POST: Playlists/Edit/5 - Requiere autenticación y propiedad
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Edit(int id, CreatePlaylistDto dto)
         {
+            var authCheck = CheckAuthenticationAndRedirect();
+            if (authCheck != null) return authCheck;
+
             if (!ModelState.IsValid)
             {
                 ViewBag.PlaylistId = id;
@@ -231,14 +386,33 @@ namespace BeatBay.MVC.Controllers
 
             try
             {
-                var success = await ApiPutAsync($"playlists/{id}", dto);
-                if (success)
+                var response = await ApiPutAsync($"playlists/{id}", dto);
+
+                if (response.IsSuccess)
                 {
                     TempData["Success"] = "Playlist actualizada exitosamente!";
-                    return RedirectToAction(nameof(Index));
+                    return RedirectToAction(nameof(MyPlaylists));
                 }
 
-                ViewBag.Error = "Error actualizando playlist.";
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+
+                if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    TempData["Error"] = response.ErrorMessage ?? "No tienes permisos para editar esta playlist.";
+                    return RedirectToAction(nameof(MyPlaylists));
+                }
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    TempData["Error"] = "La playlist no fue encontrada.";
+                    return RedirectToAction(nameof(MyPlaylists));
+                }
+
+                ViewBag.Error = response.ErrorMessage ?? "Error actualizando playlist.";
                 ViewBag.PlaylistId = id;
                 return View(dto);
             }
@@ -251,18 +425,64 @@ namespace BeatBay.MVC.Controllers
             }
         }
 
-        // POST: Playlists/Delete/5 - SIN VALIDACION DE LOGIN
-        [HttpPost]
-        [ValidateAntiForgeryToken]
+        // GET: Playlists/Delete/5
         public async Task<IActionResult> Delete(int id)
         {
+            var authCheck = CheckAuthenticationAndRedirect();
+            if (authCheck != null) return authCheck;
+
             try
             {
-                var success = await ApiDeleteAsync($"playlists/{id}");
-                if (success)
-                    TempData["Success"] = "Playlist eliminada exitosamente!";
+                var playlist = await ApiGetAsync<PlaylistDto>($"playlists/{id}");
+                if (playlist == null)
+                {
+                    TempData["Error"] = "Playlist no encontrada.";
+                    return RedirectToAction(nameof(MyPlaylists));
+                }
+
+                return View(playlist);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error cargando playlist para eliminación");
+                TempData["Error"] = "Error cargando playlist.";
+                return RedirectToAction(nameof(MyPlaylists));
+            }
+        }
+
+        // POST: Playlists/DeleteConfirmed/5 - Requiere autenticación y propiedad
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DeleteConfirmed(int id)
+        {
+            var authCheck = CheckAuthenticationAndRedirect();
+            if (authCheck != null) return authCheck;
+
+            try
+            {
+                var response = await ApiDeleteAsync($"playlists/{id}");
+
+                if (response.IsSuccess)
+                {
+                    TempData["Success"] = response.SuccessMessage ?? "Playlist eliminada exitosamente!";
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    TempData["Error"] = response.ErrorMessage ?? "No tienes permisos para eliminar esta playlist.";
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    TempData["Error"] = "La playlist no fue encontrada.";
+                }
                 else
-                    TempData["Error"] = "Error eliminando playlist.";
+                {
+                    TempData["Error"] = response.ErrorMessage ?? "Error eliminando playlist.";
+                }
             }
             catch (Exception ex)
             {
@@ -270,21 +490,38 @@ namespace BeatBay.MVC.Controllers
                 TempData["Error"] = "Error eliminando playlist.";
             }
 
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction(nameof(MyPlaylists));
         }
 
-        // POST: Playlists/AddSong/5 - SIN VALIDACION DE LOGIN
+        // POST: Playlists/AddSong/5 - Requiere autenticación y propiedad
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> AddSong(int id, AddSongToPlaylistDto dto)
         {
+            var authCheck = CheckAuthenticationAndRedirect();
+            if (authCheck != null) return authCheck;
+
             try
             {
-                var success = await ApiPostAsync($"playlists/{id}/songs", dto);
-                if (success)
+                var response = await ApiPostAsync($"playlists/{id}/songs", dto);
+
+                if (response.IsSuccess)
+                {
                     TempData["Success"] = "Canción agregada a la playlist exitosamente!";
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    TempData["Error"] = "No tienes permisos para modificar esta playlist.";
+                }
                 else
-                    TempData["Error"] = "Error agregando canción a la playlist.";
+                {
+                    TempData["Error"] = response.ErrorMessage ?? "Error agregando canción a la playlist.";
+                }
             }
             catch (Exception ex)
             {
@@ -295,18 +532,35 @@ namespace BeatBay.MVC.Controllers
             return RedirectToAction(nameof(Details), new { id });
         }
 
-        // POST: Playlists/RemoveSong/5 - SIN VALIDACION DE LOGIN
+        // POST: Playlists/RemoveSong/5 - Requiere autenticación y propiedad
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> RemoveSong(int id, int songId)
         {
+            var authCheck = CheckAuthenticationAndRedirect();
+            if (authCheck != null) return authCheck;
+
             try
             {
-                var success = await ApiDeleteAsync($"playlists/{id}/songs/{songId}");
-                if (success)
-                    TempData["Success"] = "Canción removida de la playlist exitosamente!";
+                var response = await ApiDeleteAsync($"playlists/{id}/songs/{songId}");
+
+                if (response.IsSuccess)
+                {
+                    TempData["Success"] = response.SuccessMessage ?? "Canción removida de la playlist exitosamente!";
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    TempData["Error"] = "No tienes permisos para modificar esta playlist.";
+                }
                 else
-                    TempData["Error"] = "Error removiendo canción de la playlist.";
+                {
+                    TempData["Error"] = response.ErrorMessage ?? "Error removiendo canción de la playlist.";
+                }
             }
             catch (Exception ex)
             {
@@ -316,5 +570,15 @@ namespace BeatBay.MVC.Controllers
 
             return RedirectToAction(nameof(Details), new { id });
         }
+    }
+
+    // Clase helper para manejar respuestas de API
+    public class ApiResponse<T>
+    {
+        public bool IsSuccess { get; set; }
+        public System.Net.HttpStatusCode StatusCode { get; set; }
+        public T? Content { get; set; }
+        public string? ErrorMessage { get; set; }
+        public string? SuccessMessage { get; set; }
     }
 }
