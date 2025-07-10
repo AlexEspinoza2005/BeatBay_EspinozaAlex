@@ -1,0 +1,138 @@
+﻿@model List<BeatBay.DTOs.SongStatsDto>
+
+@{
+    ViewData["Title"] = "Estadísticas del Artista";
+}
+
+<h2>Estadísticas del Artista</h2>
+
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger">
+        @TempData["Error"]
+    </div>
+}
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success">
+        @TempData["Success"]
+    </div>
+}
+
+<!-- Resumen -->
+@if (ViewBag.Summary != null)
+{
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h3>Resumen</h3>
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title">@ViewBag.Summary.TotalSongs</h5>
+                            <p class="card-text">Total Canciones</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title">@ViewBag.Summary.TotalPlays</h5>
+                            <p class="card-text">Total Reproducciones</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title">@ViewBag.Summary.ActiveSongs</h5>
+                            <p class="card-text">Canciones Activas</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                @{
+                                    var totalDuration = ViewBag.Summary.TotalDurationPlayed ?? 0;
+                                    var timeSpan = TimeSpan.FromSeconds(Convert.ToDouble(totalDuration));
+                                }
+                                @timeSpan.ToString(@"hh\:mm\:ss")
+                            </h5>
+                            <p class="card-text">Tiempo Total Reproducido</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Top 5 Canciones -->
+@if (ViewBag.TopSongs != null)
+{
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h3>Top 5 Canciones</h3>
+            <div class="list-group">
+                @foreach (var song in ViewBag.TopSongs)
+                {
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">@song.Title</h6>
+                            <small>@song.PlayCount reproducciones</small>
+                        </div>
+                        <a href="@Url.Action("SongDetails", new { id = song.SongId })" class="btn btn-sm btn-outline-primary">Ver Detalles</a>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Todas las canciones -->
+<div class="row">
+    <div class="col-md-12">
+        <h3>Todas mis Canciones</h3>
+        <div class="mb-3">
+            <a href="@Url.Action("TopSongs")" class="btn btn-info">Ver Top 20</a>
+        </div>
+
+        @if (Model != null && Model.Any())
+        {
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Título</th>
+                            <th>Reproducciones</th>
+                            <th>Tiempo Total</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var song in Model)
+                        {
+                            <tr>
+                                <td>@song.Title</td>
+                                <td>@song.PlayCount</td>
+                                <td>@(TimeSpan.FromSeconds(song.TotalDurationPlayed).ToString(@"hh\:mm\:ss"))</td>
+                                <td>
+                                    <a href="@Url.Action("SongDetails", new { id = song.SongId })" class="btn btn-sm btn-primary">Ver Detalles</a>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-info">
+                No tienes canciones aún. <a href="@Url.Action("Create", "Songs")">Crea tu primera canción</a>
+            </div>
+        }
+    </div>
+</div>

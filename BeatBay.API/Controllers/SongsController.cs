@@ -286,6 +286,34 @@ namespace BeatBay.API.Controllers
             return Ok(new { message = "Canción desactivada correctamente" });
         }
 
+        // POST: api/songs/5/play
+        [HttpPost("{id}/play")]
+        [Authorize]
+        public async Task<IActionResult> RecordPlay(int id)
+        {
+            var song = await _context.Songs.FindAsync(id);
+            if (song == null)
+                return NotFound();
+
+            var currentUser = await GetCurrentUserAsync();
+            if (currentUser == null)
+                return Unauthorized();
+
+            var playbackStat = new PlaybackStatistic
+            {
+                SongId = id,
+                UserId = currentUser.Id,
+                PlaybackDate = DateTime.UtcNow,
+                PlayCount = 1,
+                DurationPlayedSeconds = 0 // Actualizar según duración real reproducida
+            };
+
+            _context.PlaybackStatistics.Add(playbackStat);
+            await _context.SaveChangesAsync();
+
+            return Ok();
+        }
+
         // GET: api/songs/my-songs (Para artistas ver sus propias canciones)
         [HttpGet("my-songs")]
         [Authorize]
@@ -337,4 +365,8 @@ namespace BeatBay.API.Controllers
             return Ok(roles.ToList());
         }
     }
+
+
+
+
 }
