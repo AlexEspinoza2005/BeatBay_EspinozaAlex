@@ -1,44 +1,59 @@
-﻿using BeatBay.DTOs;
-using Microsoft.AspNetCore.Authorization;
+﻿using BeatBay.APIConsumer;
+using BeatBay.DTOs;
 using Microsoft.AspNetCore.Mvc;
-using Newtonsoft.Json;
-using System.Text;
 
 namespace BeatBay.MVC.Controllers
 {
     public class PlaylistsController : Controller
     {
-        private readonly HttpClient _httpClient;
-        private readonly string _apiBaseUrl;
         private readonly ILogger<PlaylistsController> _logger;
+        private readonly IConfiguration _configuration;
+        private readonly string _apiBaseUrl;
 
-        public PlaylistsController(IHttpClientFactory httpClientFactory, IConfiguration configuration, ILogger<PlaylistsController> logger)
+        public PlaylistsController(ILogger<PlaylistsController> logger, IConfiguration configuration)
         {
-            _httpClient = httpClientFactory.CreateClient();
-            _apiBaseUrl = configuration.GetValue<string>("ApiSettings:BaseUrl") ?? "https://localhost:7037/api";
             _logger = logger;
+            _configuration = configuration;
+            _apiBaseUrl = configuration.GetValue<string>("ApiSettings:BaseUrl") ?? "https://localhost:7037/api";
         }
 
-        // Mejorado: Validación de token más robusta
-        private void AddAuthHeader()
+        // Método para configurar el endpoint y token antes de cada operación
+        private void ConfigureCrud()
         {
+            Crud<PlaylistDto>.EndPoint = $"{_apiBaseUrl}/playlists";
             var token = HttpContext.Session.GetString("JwtToken");
-            if (!string.IsNullOrEmpty(token))
-            {
-                _httpClient.DefaultRequestHeaders.Clear();
-                _httpClient.DefaultRequestHeaders.Authorization =
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-            }
+            Crud<PlaylistDto>.AuthToken = token;
         }
 
-        // Mejorado: Verificar si el usuario está autenticado
+        private void ConfigureCrudForCreate()
+        {
+            Crud<CreatePlaylistDto>.EndPoint = $"{_apiBaseUrl}/playlists";
+            var token = HttpContext.Session.GetString("JwtToken");
+            Crud<CreatePlaylistDto>.AuthToken = token;
+        }
+
+        private void ConfigureCrudForSongs()
+        {
+            Crud<SongDto>.EndPoint = $"{_apiBaseUrl}/songs";
+            var token = HttpContext.Session.GetString("JwtToken");
+            Crud<SongDto>.AuthToken = token;
+        }
+
+        private void ConfigureCrudForAddSong()
+        {
+            Crud<AddSongToPlaylistDto>.EndPoint = $"{_apiBaseUrl}/playlists";
+            var token = HttpContext.Session.GetString("JwtToken");
+            Crud<AddSongToPlaylistDto>.AuthToken = token;
+        }
+
+        // Verificar si el usuario está autenticado
         private bool IsAuthenticated()
         {
             var token = HttpContext.Session.GetString("JwtToken");
             return !string.IsNullOrEmpty(token);
         }
 
-        // Método para verificar si el usuario está logueado antes de acciones que requieren auth
+        // Método para verificar autenticación y redirigir si es necesario
         private IActionResult CheckAuthenticationAndRedirect()
         {
             if (!IsAuthenticated())
@@ -49,190 +64,13 @@ namespace BeatBay.MVC.Controllers
             return null;
         }
 
-        // Método helper para extraer mensajes de error del JSON
-        private async Task<string> ExtractErrorMessage(HttpResponseMessage response)
-        {
-            try
-            {
-                var content = await response.Content.ReadAsStringAsync();
-                var errorObj = JsonConvert.DeserializeObject<dynamic>(content);
-
-                // Intentar obtener el mensaje de diferentes estructuras posibles
-                if (errorObj?.message != null)
-                    return errorObj.message;
-
-                if (errorObj?.Message != null)
-                    return errorObj.Message;
-
-                return content;
-            }
-            catch
-            {
-                return "Error procesando la solicitud.";
-            }
-        }
-
-        private async Task<T?> ApiGetAsync<T>(string endpoint)
-        {
-            try
-            {
-                AddAuthHeader();
-                var response = await _httpClient.GetAsync($"{_apiBaseUrl}/{endpoint}");
-
-                if (response.IsSuccessStatusCode)
-                {
-                    var json = await response.Content.ReadAsStringAsync();
-                    return JsonConvert.DeserializeObject<T>(json);
-                }
-
-                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                {
-                    // Limpiar sesión y redirigir
-                    HttpContext.Session.Remove("JwtToken");
-                    return default(T);
-                }
-
-                _logger.LogError("Error en API: {StatusCode} - {Content}", response.StatusCode, await response.Content.ReadAsStringAsync());
-                return default(T);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error llamando al endpoint de API: {Endpoint}", endpoint);
-                return default(T);
-            }
-        }
-
-        private async Task<ApiResponse<T>> ApiPostAsync<T>(string endpoint, T data)
-        {
-            try
-            {
-                AddAuthHeader();
-                var json = JsonConvert.SerializeObject(data);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-                var response = await _httpClient.PostAsync($"{_apiBaseUrl}/{endpoint}", content);
-
-                string errorMessage = null;
-                if (!response.IsSuccessStatusCode)
-                {
-                    errorMessage = await ExtractErrorMessage(response);
-                }
-
-                return new ApiResponse<T>
-                {
-                    IsSuccess = response.IsSuccessStatusCode,
-                    StatusCode = response.StatusCode,
-                    Content = response.IsSuccessStatusCode ? data : default(T),
-                    ErrorMessage = errorMessage
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error en POST al endpoint de API: {Endpoint}", endpoint);
-                return new ApiResponse<T>
-                {
-                    IsSuccess = false,
-                    StatusCode = System.Net.HttpStatusCode.InternalServerError,
-                    ErrorMessage = ex.Message
-                };
-            }
-        }
-
-        private async Task<ApiResponse<T>> ApiPutAsync<T>(string endpoint, T data)
-        {
-            try
-            {
-                AddAuthHeader();
-                var json = JsonConvert.SerializeObject(data);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-                var response = await _httpClient.PutAsync($"{_apiBaseUrl}/{endpoint}", content);
-
-                string errorMessage = null;
-                if (!response.IsSuccessStatusCode)
-                {
-                    errorMessage = await ExtractErrorMessage(response);
-                }
-
-                return new ApiResponse<T>
-                {
-                    IsSuccess = response.IsSuccessStatusCode,
-                    StatusCode = response.StatusCode,
-                    Content = response.IsSuccessStatusCode ? data : default(T),
-                    ErrorMessage = errorMessage
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error en PUT al endpoint de API: {Endpoint}", endpoint);
-                return new ApiResponse<T>
-                {
-                    IsSuccess = false,
-                    StatusCode = System.Net.HttpStatusCode.InternalServerError,
-                    ErrorMessage = ex.Message
-                };
-            }
-        }
-
-        private async Task<ApiResponse<object>> ApiDeleteAsync(string endpoint)
-        {
-            try
-            {
-                AddAuthHeader();
-                var response = await _httpClient.DeleteAsync($"{_apiBaseUrl}/{endpoint}");
-
-                string errorMessage = null;
-                string successMessage = null;
-
-                if (response.IsSuccessStatusCode)
-                {
-                    // Para respuestas exitosas, intentar extraer el mensaje de éxito
-                    try
-                    {
-                        var content = await response.Content.ReadAsStringAsync();
-                        var responseObj = JsonConvert.DeserializeObject<dynamic>(content);
-
-                        if (responseObj?.message != null)
-                            successMessage = responseObj.message;
-                    }
-                    catch
-                    {
-                        // Si no se puede parsear, no es crítico para una respuesta exitosa
-                        successMessage = "Operación completada exitosamente";
-                    }
-                }
-                else
-                {
-                    // Solo extraer mensaje de error para respuestas no exitosas
-                    errorMessage = await ExtractErrorMessage(response);
-                }
-
-                return new ApiResponse<object>
-                {
-                    IsSuccess = response.IsSuccessStatusCode,
-                    StatusCode = response.StatusCode,
-                    ErrorMessage = errorMessage,
-                    SuccessMessage = successMessage
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error en DELETE al endpoint de API: {Endpoint}", endpoint);
-                return new ApiResponse<object>
-                {
-                    IsSuccess = false,
-                    StatusCode = System.Net.HttpStatusCode.InternalServerError,
-                    ErrorMessage = ex.Message
-                };
-            }
-        }
-
         // GET: Playlists - Públicas, sin autorización
         public async Task<IActionResult> Index()
         {
             try
             {
-                var playlists = await ApiGetAsync<List<PlaylistDto>>("playlists") ?? new List<PlaylistDto>();
+                ConfigureCrud();
+                var playlists = Crud<PlaylistDto>.GetAll() ?? new List<PlaylistDto>();
                 return View(playlists);
             }
             catch (Exception ex)
@@ -251,19 +89,23 @@ namespace BeatBay.MVC.Controllers
 
             try
             {
-                var playlists = await ApiGetAsync<List<PlaylistDto>>("playlists/my-playlists");
-
-                if (playlists == null)
-                {
-                    TempData["Error"] = "Error cargando playlists. Por favor inicia sesión nuevamente.";
-                    return RedirectToAction("Login", "Account");
-                }
-
+                ConfigureCrud();
+                // Usar el endpoint específico para "my-playlists"
+                Crud<PlaylistDto>.EndPoint = $"{_apiBaseUrl}/playlists/my-playlists";
+                var playlists = Crud<PlaylistDto>.GetAll() ?? new List<PlaylistDto>();
                 return View(playlists);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error cargando mis playlists");
+
+                // Si es error de autorización, redirigir al login
+                if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+                {
+                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+
                 ViewBag.Error = "Error cargando sus playlists. Por favor intente nuevamente.";
                 return View(new List<PlaylistDto>());
             }
@@ -274,16 +116,31 @@ namespace BeatBay.MVC.Controllers
         {
             try
             {
-                var playlist = await ApiGetAsync<PlaylistDto>($"playlists/{id}");
+                ConfigureCrud();
+                var playlist = Crud<PlaylistDto>.GetById(id);
+
                 if (playlist == null)
                     return NotFound();
 
                 // Cargar canciones disponibles solo si el usuario está autenticado
                 if (IsAuthenticated())
                 {
-                    var allSongs = await ApiGetAsync<List<SongDto>>("songs?isActive=true") ?? new List<SongDto>();
-                    var playlistSongIds = playlist.Songs.Select(s => s.Id).ToHashSet();
-                    ViewBag.AvailableSongs = allSongs.Where(s => !playlistSongIds.Contains(s.Id)).ToList();
+                    try
+                    {
+                        ConfigureCrudForSongs();
+                        var allSongs = Crud<SongDto>.GetAll() ?? new List<SongDto>();
+
+                        // Filtrar solo canciones activas y que no estén en la playlist
+                        var playlistSongIds = playlist.Songs.Select(s => s.Id).ToHashSet();
+                        ViewBag.AvailableSongs = allSongs
+                            .Where(s => s.IsActive && !playlistSongIds.Contains(s.Id))
+                            .ToList();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error cargando canciones disponibles");
+                        ViewBag.AvailableSongs = new List<SongDto>();
+                    }
                 }
 
                 return View(playlist);
@@ -318,27 +175,23 @@ namespace BeatBay.MVC.Controllers
 
             try
             {
-                var response = await ApiPostAsync("playlists", dto);
+                ConfigureCrudForCreate();
+                var createdPlaylist = Crud<CreatePlaylistDto>.Create(dto);
 
-                if (response.IsSuccess)
-                {
-                    TempData["Success"] = "Playlist creada exitosamente!";
-                    return RedirectToAction(nameof(MyPlaylists));
-                }
+                TempData["Success"] = "Playlist creada exitosamente!";
+                return RedirectToAction(nameof(MyPlaylists));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creando playlist");
 
-                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
                 {
                     TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
                     return RedirectToAction("Login", "Account");
                 }
 
-                ViewBag.Error = response.ErrorMessage ?? "Error creando playlist.";
-                return View(dto);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error creando playlist");
-                ViewBag.Error = "Error creando playlist.";
+                ViewBag.Error = "Error creando playlist. " + ex.Message;
                 return View(dto);
             }
         }
@@ -351,7 +204,9 @@ namespace BeatBay.MVC.Controllers
 
             try
             {
-                var playlist = await ApiGetAsync<PlaylistDto>($"playlists/{id}");
+                ConfigureCrud();
+                var playlist = Crud<PlaylistDto>.GetById(id);
+
                 if (playlist == null)
                 {
                     TempData["Error"] = "Playlist no encontrada o no tienes permisos para editarla.";
@@ -365,6 +220,13 @@ namespace BeatBay.MVC.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error cargando playlist para edición");
+
+                if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+                {
+                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+
                 TempData["Error"] = "Error cargando playlist para edición.";
                 return RedirectToAction(nameof(MyPlaylists));
             }
@@ -386,40 +248,42 @@ namespace BeatBay.MVC.Controllers
 
             try
             {
-                var response = await ApiPutAsync($"playlists/{id}", dto);
+                ConfigureCrudForCreate();
+                var success = Crud<CreatePlaylistDto>.Update(id, dto);
 
-                if (response.IsSuccess)
+                if (success)
                 {
                     TempData["Success"] = "Playlist actualizada exitosamente!";
                     return RedirectToAction(nameof(MyPlaylists));
                 }
 
-                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                {
-                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
-                    return RedirectToAction("Login", "Account");
-                }
-
-                if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                {
-                    TempData["Error"] = response.ErrorMessage ?? "No tienes permisos para editar esta playlist.";
-                    return RedirectToAction(nameof(MyPlaylists));
-                }
-
-                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-                {
-                    TempData["Error"] = "La playlist no fue encontrada.";
-                    return RedirectToAction(nameof(MyPlaylists));
-                }
-
-                ViewBag.Error = response.ErrorMessage ?? "Error actualizando playlist.";
+                ViewBag.Error = "Error actualizando playlist.";
                 ViewBag.PlaylistId = id;
                 return View(dto);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error actualizando playlist");
-                ViewBag.Error = "Error actualizando playlist.";
+
+                if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+                {
+                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+
+                if (ex.Message.Contains("403") || ex.Message.Contains("Forbidden"))
+                {
+                    TempData["Error"] = "No tienes permisos para editar esta playlist.";
+                    return RedirectToAction(nameof(MyPlaylists));
+                }
+
+                if (ex.Message.Contains("404") || ex.Message.Contains("Not Found"))
+                {
+                    TempData["Error"] = "La playlist no fue encontrada.";
+                    return RedirectToAction(nameof(MyPlaylists));
+                }
+
+                ViewBag.Error = "Error actualizando playlist. " + ex.Message;
                 ViewBag.PlaylistId = id;
                 return View(dto);
             }
@@ -433,7 +297,9 @@ namespace BeatBay.MVC.Controllers
 
             try
             {
-                var playlist = await ApiGetAsync<PlaylistDto>($"playlists/{id}");
+                ConfigureCrud();
+                var playlist = Crud<PlaylistDto>.GetById(id);
+
                 if (playlist == null)
                 {
                     TempData["Error"] = "Playlist no encontrada.";
@@ -445,6 +311,13 @@ namespace BeatBay.MVC.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error cargando playlist para eliminación");
+
+                if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+                {
+                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+
                 TempData["Error"] = "Error cargando playlist.";
                 return RedirectToAction(nameof(MyPlaylists));
             }
@@ -460,34 +333,40 @@ namespace BeatBay.MVC.Controllers
 
             try
             {
-                var response = await ApiDeleteAsync($"playlists/{id}");
+                ConfigureCrud();
+                var success = Crud<PlaylistDto>.Delete(id);
 
-                if (response.IsSuccess)
+                if (success)
                 {
-                    TempData["Success"] = response.SuccessMessage ?? "Playlist eliminada exitosamente!";
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                {
-                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
-                    return RedirectToAction("Login", "Account");
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                {
-                    TempData["Error"] = response.ErrorMessage ?? "No tienes permisos para eliminar esta playlist.";
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-                {
-                    TempData["Error"] = "La playlist no fue encontrada.";
+                    TempData["Success"] = "Playlist eliminada exitosamente!";
                 }
                 else
                 {
-                    TempData["Error"] = response.ErrorMessage ?? "Error eliminando playlist.";
+                    TempData["Error"] = "Error eliminando playlist.";
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error eliminando playlist");
-                TempData["Error"] = "Error eliminando playlist.";
+
+                if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+                {
+                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+
+                if (ex.Message.Contains("403") || ex.Message.Contains("Forbidden"))
+                {
+                    TempData["Error"] = "No tienes permisos para eliminar esta playlist.";
+                }
+                else if (ex.Message.Contains("404") || ex.Message.Contains("Not Found"))
+                {
+                    TempData["Error"] = "La playlist no fue encontrada.";
+                }
+                else
+                {
+                    TempData["Error"] = "Error eliminando playlist. " + ex.Message;
+                }
             }
 
             return RedirectToAction(nameof(MyPlaylists));
@@ -503,30 +382,35 @@ namespace BeatBay.MVC.Controllers
 
             try
             {
-                var response = await ApiPostAsync($"playlists/{id}/songs", dto);
+                ConfigureCrudForAddSong();
+                // Configurar endpoint específico para agregar canción
+                Crud<AddSongToPlaylistDto>.EndPoint = $"{_apiBaseUrl}/playlists/{id}/songs";
 
-                if (response.IsSuccess)
-                {
-                    TempData["Success"] = "Canción agregada a la playlist exitosamente!";
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                {
-                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
-                    return RedirectToAction("Login", "Account");
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                {
-                    TempData["Error"] = "No tienes permisos para modificar esta playlist.";
-                }
-                else
-                {
-                    TempData["Error"] = response.ErrorMessage ?? "Error agregando canción a la playlist.";
-                }
+                var result = Crud<AddSongToPlaylistDto>.Create(dto);
+                TempData["Success"] = "Canción agregada a la playlist exitosamente!";
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error agregando canción a playlist");
-                TempData["Error"] = "Error agregando canción a la playlist.";
+
+                if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+                {
+                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+
+                if (ex.Message.Contains("403") || ex.Message.Contains("Forbidden"))
+                {
+                    TempData["Error"] = "No tienes permisos para modificar esta playlist.";
+                }
+                else if (ex.Message.Contains("400") || ex.Message.Contains("Bad Request"))
+                {
+                    TempData["Error"] = "La canción ya está en la playlist o no es válida.";
+                }
+                else
+                {
+                    TempData["Error"] = "Error agregando canción a la playlist. " + ex.Message;
+                }
             }
 
             return RedirectToAction(nameof(Details), new { id });
@@ -542,43 +426,49 @@ namespace BeatBay.MVC.Controllers
 
             try
             {
-                var response = await ApiDeleteAsync($"playlists/{id}/songs/{songId}");
+                // Para eliminar canción, necesitamos usar un endpoint específico
+                // Como la clase Crud no tiene un método para endpoints complejos,
+                // podemos usar el patrón de configurar el endpoint completo
+                Crud<object>.EndPoint = $"{_apiBaseUrl}/playlists/{id}/songs";
+                var token = HttpContext.Session.GetString("JwtToken");
+                Crud<object>.AuthToken = token;
 
-                if (response.IsSuccess)
+                var success = Crud<object>.Delete(songId);
+
+                if (success)
                 {
-                    TempData["Success"] = response.SuccessMessage ?? "Canción removida de la playlist exitosamente!";
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                {
-                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
-                    return RedirectToAction("Login", "Account");
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                {
-                    TempData["Error"] = "No tienes permisos para modificar esta playlist.";
+                    TempData["Success"] = "Canción removida de la playlist exitosamente!";
                 }
                 else
                 {
-                    TempData["Error"] = response.ErrorMessage ?? "Error removiendo canción de la playlist.";
+                    TempData["Error"] = "Error removiendo canción de la playlist.";
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error removiendo canción de playlist");
-                TempData["Error"] = "Error removiendo canción de la playlist.";
+
+                if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+                {
+                    TempData["Error"] = "Tu sesión ha expirado. Por favor inicia sesión nuevamente.";
+                    return RedirectToAction("Login", "Account");
+                }
+
+                if (ex.Message.Contains("403") || ex.Message.Contains("Forbidden"))
+                {
+                    TempData["Error"] = "No tienes permisos para modificar esta playlist.";
+                }
+                else if (ex.Message.Contains("404") || ex.Message.Contains("Not Found"))
+                {
+                    TempData["Error"] = "La canción no está en la playlist.";
+                }
+                else
+                {
+                    TempData["Error"] = "Error removiendo canción de la playlist. " + ex.Message;
+                }
             }
 
             return RedirectToAction(nameof(Details), new { id });
         }
-    }
-
-    // Clase helper para manejar respuestas de API
-    public class ApiResponse<T>
-    {
-        public bool IsSuccess { get; set; }
-        public System.Net.HttpStatusCode StatusCode { get; set; }
-        public T? Content { get; set; }
-        public string? ErrorMessage { get; set; }
-        public string? SuccessMessage { get; set; }
     }
 }

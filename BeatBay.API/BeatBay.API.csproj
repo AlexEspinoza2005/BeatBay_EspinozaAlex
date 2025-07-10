@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\BeatBay.APIConsumer\BeatBay.APIConsumer.csproj" />
     <ProjectReference Include="..\BeatBay.Model\BeatBay.Model.csproj" />
   </ItemGroup>
 
