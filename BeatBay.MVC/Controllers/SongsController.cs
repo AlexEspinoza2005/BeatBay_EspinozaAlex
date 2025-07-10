@@ -432,9 +432,47 @@ namespace BeatBayMVC.Controllers
                 return NotFound();
             }
         }
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> RecordPlay(int id, [FromBody] RecordPlayRequest request)
+        {
+            if (!await IsUserLoggedInAsync())
+                return Json(new { success = false, message = "No autorizado" });
 
-        // POST: Songs/Delete/5
-        [HttpPost, ActionName("Delete")]
+            try
+            {
+                AddAuthHeader();
+
+                var requestData = new { DurationPlayedSeconds = request.DurationPlayedSeconds };
+                var json = JsonConvert.SerializeObject(requestData);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PostAsync($"{_apiBaseUrl}/songs/{id}/play", content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    var result = JsonConvert.DeserializeObject<dynamic>(responseContent);
+                    return Json(new { success = true, message = "Reproducción registrada" });
+                }
+
+                return Json(new { success = false, message = "Error al registrar reproducción" });
+            }
+            catch (Exception ex)
+            {
+                return Json(new { success = false, message = ex.Message });
+            }
+        }
+
+        public class RecordPlayRequest
+        {
+            public int DurationPlayedSeconds { get; set; }
+        }
+
+
+
+            // POST: Songs/Delete/5
+            [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteConfirmed(int id)
         {

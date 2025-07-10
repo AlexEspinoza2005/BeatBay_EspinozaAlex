@@ -70,7 +70,9 @@ namespace BeatBay.API.Controllers
                     ArtistName = s.Artist.Name ?? s.Artist.UserName,
                     IsActive = s.IsActive,
                     UploadedAt = s.UploadedAt,
-                    PlayCount = s.PlaybackStatistics.Sum(ps => ps.PlayCount)
+                    PlayCount = _context.PlaybackStatistics
+                        .Where(ps => ps.EntityType == EntityType.Song && ps.EntityId == s.Id)
+                        .Sum(ps => ps.PlayCount)
                 })
                 .ToListAsync();
 
@@ -83,7 +85,6 @@ namespace BeatBay.API.Controllers
         {
             var song = await _context.Songs
                 .Include(s => s.Artist)
-                .Include(s => s.PlaybackStatistics)
                 .FirstOrDefaultAsync(s => s.Id == id);
 
             if (song == null)
@@ -100,7 +101,9 @@ namespace BeatBay.API.Controllers
                 ArtistName = song.Artist.Name ?? song.Artist.UserName,
                 IsActive = song.IsActive,
                 UploadedAt = song.UploadedAt,
-                PlayCount = song.PlaybackStatistics.Sum(ps => ps.PlayCount)
+                PlayCount = _context.PlaybackStatistics
+                    .Where(ps => ps.EntityType == EntityType.Song && ps.EntityId == id)
+                    .Sum(ps => ps.PlayCount)
             };
 
             return Ok(songDto);
@@ -232,7 +235,6 @@ namespace BeatBay.API.Controllers
 
             return Ok();
         }
-
         // GET: api/songs/my-songs
         [HttpGet("my-songs")]
         [Authorize]
@@ -250,7 +252,6 @@ namespace BeatBay.API.Controllers
 
             var songs = await _context.Songs
                 .Include(s => s.Artist)
-                .Include(s => s.PlaybackStatistics)
                 .Where(s => s.ArtistId == currentUser.Id)
                 .Select(s => new SongDto
                 {
@@ -263,7 +264,9 @@ namespace BeatBay.API.Controllers
                     ArtistName = s.Artist.Name ?? s.Artist.UserName,
                     IsActive = s.IsActive,
                     UploadedAt = s.UploadedAt,
-                    PlayCount = s.PlaybackStatistics.Sum(ps => ps.PlayCount)
+                    PlayCount = _context.PlaybackStatistics
+                        .Where(ps => ps.EntityType == EntityType.Song && ps.EntityId == s.Id)
+                        .Sum(ps => ps.PlayCount)
                 })
                 .ToListAsync();
 
@@ -273,7 +276,7 @@ namespace BeatBay.API.Controllers
         // POST: api/songs/5/play
         [HttpPost("{id}/play")]
         [Authorize]
-        public async Task<IActionResult> RecordPlay(int id)
+        public async Task<IActionResult> RecordPlay(int id, [FromBody] RecordPlayRequest request)
         {
             var song = await _context.Songs.FindAsync(id);
             if (song == null)
@@ -283,19 +286,52 @@ namespace BeatBay.API.Controllers
             if (currentUser == null)
                 return Unauthorized();
 
-            var playbackStat = new PlaybackStatistic
-            {
-                SongId = id,
-                UserId = currentUser.Id,
-                PlaybackDate = DateTime.UtcNow,
-                PlayCount = 1,
-                DurationPlayedSeconds = 0
-            };
+            // Validar que el tiempo reproducido sea válido
+            if (request.DurationPlayedSeconds <= 0)
+                return BadRequest("La duración reproducida debe ser mayor a 0");
 
-            _context.PlaybackStatistics.Add(playbackStat);
+            // Buscar si ya existe una estadística para este usuario y canción en la misma fecha
+            var today = DateTime.UtcNow.Date;
+            var existingStat = await _context.PlaybackStatistics
+                .FirstOrDefaultAsync(ps =>
+                    ps.EntityType == EntityType.Song &&
+                    ps.EntityId == id &&
+                    ps.UserId == currentUser.Id &&
+                    ps.PlaybackDate.Date == today);
+
+            if (existingStat != null)
+            {
+                // Actualizar estadística existente
+                existingStat.DurationPlayedSeconds += request.DurationPlayedSeconds;
+                existingStat.PlayCount += 1;
+                existingStat.PlaybackDate = DateTime.UtcNow; // Actualizar la hora del último play
+            }
+            else
+            {
+                // Crear nueva estadística
+                var playbackStat = new PlaybackStatistic
+                {
+                    EntityType = EntityType.Song,
+                    EntityId = id,
+                    SongId = id,
+                    UserId = currentUser.Id,
+                    PlaybackDate = DateTime.UtcNow,
+                    DurationPlayedSeconds = request.DurationPlayedSeconds,
+                    PlayCount = 1
+                };
+
+                _context.PlaybackStatistics.Add(playbackStat);
+            }
+
             await _context.SaveChangesAsync();
 
-            return Ok();
+            return Ok(new { success = true, message = "Reproducción registrada exitosamente" });
+        }
+
+        // Clase para el request
+        public class RecordPlayRequest
+        {
+            public int DurationPlayedSeconds { get; set; }
         }
     }
 }
