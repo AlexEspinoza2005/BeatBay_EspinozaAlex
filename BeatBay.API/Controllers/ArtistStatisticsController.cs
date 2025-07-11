@@ -6,6 +6,8 @@ using System.Security.Claims;
 using BeatBay.Data;
 using BeatBay.Model;
 using BeatBay.DTOs;
+using BeatBay.API.Services;
+
 
 namespace BeatBay.API.Controllers
 {
@@ -14,13 +16,15 @@ namespace BeatBay.API.Controllers
     [Authorize]
     public class ArtistStatisticsController : ControllerBase
     {
+        private readonly PdfReportService _pdfReportService;
         private readonly BeatBayDbContext _context;
         private readonly UserManager<User> _userManager;
 
-        public ArtistStatisticsController(BeatBayDbContext context, UserManager<User> userManager)
+        public ArtistStatisticsController(BeatBayDbContext context, UserManager<User> userManager, PdfReportService pdfReportService)
         {
             _context = context;
             _userManager = userManager;
+            _pdfReportService = pdfReportService;
         }
 
         // Método helper para verificar roles usando Identity
@@ -192,6 +196,8 @@ namespace BeatBay.API.Controllers
             }
         }
 
+
+
         // GET: api/artiststatistics/top-songs
         [HttpGet("top-songs")]
         public async Task<ActionResult<TopSongsDto>> GetTopSongs([FromQuery] int limit = 10)
@@ -228,6 +234,90 @@ namespace BeatBay.API.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, $"Error al obtener top canciones: {ex.Message}");
+            }
+        }
+
+        // GET: api/artiststatistics/download-report
+        [HttpGet("download-report")]
+        public async Task<ActionResult> DownloadReport()
+        {
+            var currentUser = await GetCurrentUserAsync();
+            if (currentUser == null)
+                return Unauthorized("Usuario no encontrado.");
+
+            // Verificar si el usuario es Artist o Admin
+            var isArtist = await IsUserInRoleAsync(currentUser.Id, "Artist");
+            var isAdmin = await IsUserInRoleAsync(currentUser.Id, "Admin");
+
+            if (!isArtist && !isAdmin)
+                return Forbid("Debes ser artista o administrador para descargar el reporte.");
+
+            try
+            {
+                // Obtener resumen
+                var artistSongs = await _context.Songs
+                    .Where(s => s.ArtistId == currentUser.Id)
+                    .Include(s => s.PlaybackStatistics)
+                    .ToListAsync();
+
+                var totalSongs = artistSongs.Count;
+                var totalPlays = 0;
+                var totalDurationPlayed = 0;
+
+                foreach (var song in artistSongs)
+                {
+                    if (song.PlaybackStatistics != null)
+                    {
+                        totalPlays += song.PlaybackStatistics.Sum(ps => ps.PlayCount);
+                        totalDurationPlayed += song.PlaybackStatistics.Sum(ps => ps.DurationPlayedSeconds);
+                    }
+                }
+
+                var activeSongs = artistSongs.Count(s => s.IsActive);
+                var inactiveSongs = artistSongs.Count(s => !s.IsActive);
+
+                var summary = new
+                {
+                    TotalSongs = totalSongs,
+                    TotalPlays = totalPlays,
+                    TotalDurationPlayed = totalDurationPlayed,
+                    ActiveSongs = activeSongs,
+                    InactiveSongs = inactiveSongs
+                };
+
+                // Obtener todas las canciones
+                var songs = await _context.Songs
+                    .Where(s => s.ArtistId == currentUser.Id)
+                    .Select(s => new SongStatsDto
+                    {
+                        SongId = s.Id,
+                        Title = s.Title,
+                        ArtistName = s.Artist.Name ?? s.Artist.UserName,
+                        PlayCount = s.PlaybackStatistics.Sum(ps => ps.PlayCount),
+                        TotalDurationPlayed = s.PlaybackStatistics.Sum(ps => ps.DurationPlayedSeconds)
+                    })
+                    .OrderByDescending(s => s.PlayCount)
+                    .ToListAsync();
+
+                // Obtener top 10 canciones
+                var topSongs = songs.Take(10).ToList();
+
+                // Generar PDF
+                var pdfBytes = _pdfReportService.GenerateArtistStatisticsReport(
+                    currentUser.Name ?? currentUser.UserName ?? "Artista",
+                    summary,
+                    songs,
+                    topSongs
+                );
+
+                // Configurar nombre del archivo
+                var fileName = $"Reporte_Estadisticas_{currentUser.Name ?? currentUser.UserName}_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+
+                return File(pdfBytes, "application/pdf", fileName);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error al generar el reporte: {ex.Message}");
             }
         }
     }

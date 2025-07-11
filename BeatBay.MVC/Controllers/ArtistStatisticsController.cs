@@ -424,5 +424,61 @@ namespace BeatBayMVC.Controllers
             else
                 return Crud<T>.GetAll();
         }
+
+        // GET: ArtistStatistics/DownloadReport
+        public async Task<IActionResult> DownloadReport()
+        {
+            if (!await IsUserLoggedInAsync())
+            {
+                TempData["Error"] = "Debes iniciar sesión para descargar el reporte.";
+                return RedirectToAction("Login", "Auth");
+            }
+
+            if (!await UserHasRoleAsync("Artist") && !await UserHasRoleAsync("Admin"))
+            {
+                TempData["Error"] = "Debes ser artista para descargar el reporte.";
+                return RedirectToAction("Index", "Home");
+            }
+
+            try
+            {
+                var token = HttpContext.Session.GetString("JwtToken");
+                if (string.IsNullOrEmpty(token))
+                {
+                    TempData["Error"] = "Token de sesión no encontrado.";
+                    return RedirectToAction("Login", "Auth");
+                }
+
+                using (var client = new HttpClient())
+                {
+                    client.DefaultRequestHeaders.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+                    var response = await client.GetAsync($"{_apiBaseUrl}/artiststatistics/download-report");
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        TempData["Error"] = $"Error al generar el reporte: {response.StatusCode}";
+                        return RedirectToAction(nameof(Index));
+                    }
+
+                    var pdfBytes = await response.Content.ReadAsByteArrayAsync();
+
+                    // Obtener el nombre del archivo de los headers de respuesta
+                    var fileName = "Reporte_Estadisticas_Artista.pdf";
+                    if (response.Content.Headers.ContentDisposition?.FileName != null)
+                    {
+                        fileName = response.Content.Headers.ContentDisposition.FileName.Trim('"');
+                    }
+
+                    return File(pdfBytes, "application/pdf", fileName);
+                }
+            }
+            catch (Exception ex)
+            {
+                TempData["Error"] = $"Error al descargar el reporte: {ex.Message}";
+                return RedirectToAction(nameof(Index));
+            }
+        }
     }
 }
