@@ -15,6 +15,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
+
 namespace BeatBay.API.Controllers
 {
     [ApiController]
@@ -235,6 +236,7 @@ namespace BeatBay.API.Controllers
 
             return Ok();
         }
+
         // GET: api/songs/my-songs
         [HttpGet("my-songs")]
         [Authorize]
@@ -286,30 +288,22 @@ namespace BeatBay.API.Controllers
             if (currentUser == null)
                 return Unauthorized();
 
-            // Validar que el tiempo reproducido sea válido
             if (request.DurationPlayedSeconds <= 0)
                 return BadRequest("La duración reproducida debe ser mayor a 0");
 
-            // Buscar si ya existe una estadística para este usuario y canción en la misma fecha
             var today = DateTime.UtcNow.Date;
-            var existingStat = await _context.PlaybackStatistics
+            var stat = await _context.PlaybackStatistics
                 .FirstOrDefaultAsync(ps =>
                     ps.EntityType == EntityType.Song &&
                     ps.EntityId == id &&
                     ps.UserId == currentUser.Id &&
                     ps.PlaybackDate.Date == today);
 
-            if (existingStat != null)
+            if (stat == null)
             {
-                // Actualizar estadística existente
-                existingStat.DurationPlayedSeconds += request.DurationPlayedSeconds;
-                existingStat.PlayCount += 1;
-                existingStat.PlaybackDate = DateTime.UtcNow; // Actualizar la hora del último play
-            }
-            else
-            {
-                // Crear nueva estadística
-                var playbackStat = new PlaybackStatistic
+                // Nuevo registro
+                int playCount = request.DurationPlayedSeconds >= 30 ? request.DurationPlayedSeconds / 30 : 0;
+                stat = new PlaybackStatistic
                 {
                     EntityType = EntityType.Song,
                     EntityId = id,
@@ -317,10 +311,21 @@ namespace BeatBay.API.Controllers
                     UserId = currentUser.Id,
                     PlaybackDate = DateTime.UtcNow,
                     DurationPlayedSeconds = request.DurationPlayedSeconds,
-                    PlayCount = 1
+                    PlayCount = playCount
                 };
+                _context.PlaybackStatistics.Add(stat);
+            }
+            else
+            {
+                // Actualizar registro existente
+                int prevDuration = stat.DurationPlayedSeconds;
+                stat.DurationPlayedSeconds += request.DurationPlayedSeconds;
+                stat.PlaybackDate = DateTime.UtcNow;
 
-                _context.PlaybackStatistics.Add(playbackStat);
+                // Calcular cuántos múltiplos de 30 segundos se cruzaron en total
+                int prevPlays = prevDuration / 30;
+                int newPlays = stat.DurationPlayedSeconds / 30;
+                stat.PlayCount += (newPlays - prevPlays);
             }
 
             await _context.SaveChangesAsync();
@@ -333,5 +338,5 @@ namespace BeatBay.API.Controllers
         {
             public int DurationPlayedSeconds { get; set; }
         }
-    }
+    } 
 }
