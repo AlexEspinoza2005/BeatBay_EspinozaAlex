@@ -1,0 +1,260 @@
+﻿@model List<BeatBay.DTOs.UserDto>
+@{
+    ViewData["Title"] = "Gestión de Usuarios";
+}
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-users"></i>
+                        Gestión de Usuarios
+                    </h3>
+                </div>
+
+                <div class="card-body">
+                    @if (TempData["Success"] != null)
+                    {
+                        <div class="alert alert-success alert-dismissible fade show">
+                            <i class="fas fa-check-circle"></i>
+                            @TempData["Success"]
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    }
+
+                    @if (TempData["Error"] != null)
+                    {
+                        <div class="alert alert-danger alert-dismissible fade show">
+                            <i class="fas fa-exclamation-circle"></i>
+                            @TempData["Error"]
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    }
+
+                    <!-- Filtros -->
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <form asp-action="Index" method="get">
+                                <div class="input-group">
+                                    <input type="text" name="search" value="@ViewBag.SearchFilter"
+                                           class="form-control" placeholder="Buscar por usuario, email o nombre...">
+                                    <button class="btn btn-outline-secondary" type="submit">
+                                        <i class="fas fa-search"></i>
+                                    </button>
+                                </div>
+                                <input type="hidden" name="page" value="1">
+                                <input type="hidden" name="size" value="@ViewBag.PageSize">
+                                @if (ViewBag.IsActiveFilter != null)
+                                {
+                                    <input type="hidden" name="isActive" value="@ViewBag.IsActiveFilter">
+                                }
+                            </form>
+                        </div>
+
+                        <div class="col-md-3">
+                            <form asp-action="Index" method="get">
+                                <select name="isActive" class="form-select" onchange="this.form.submit()">
+                                    <option value="">Todos los estados</option>
+                                    <option value="true" selected="@(ViewBag.IsActiveFilter?.ToString() == "True")">Solo Activos</option>
+                                    <option value="false" selected="@(ViewBag.IsActiveFilter?.ToString() == "False")">Solo Inactivos</option>
+                                </select>
+                                <input type="hidden" name="page" value="1">
+                                <input type="hidden" name="size" value="@ViewBag.PageSize">
+                                @if (!string.IsNullOrEmpty(ViewBag.SearchFilter as string))
+                                {
+                                    <input type="hidden" name="search" value="@ViewBag.SearchFilter">
+                                }
+                            </form>
+                        </div>
+
+                        <!-- Botón para limpiar filtros -->
+                        <div class="col-md-2">
+                            <a asp-action="Index" class="btn btn-secondary">
+                                <i class="fas fa-times"></i> Limpiar Filtros
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Tabla de usuarios -->
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Usuario</th>
+                                    <th>Nombre</th>
+                                    <th>Email</th>
+                                    <th>Plan</th>
+                                    <th>Estado</th>
+                                    <th>Fecha Registro</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (Model != null && Model.Count > 0)
+                                {
+                                    @foreach (var user in Model)
+                                    {
+                                        var isAdmin = !string.IsNullOrEmpty(user.PlanName) && user.PlanName.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+
+                                        <tr>
+                                            <td>@user.Id</td>
+                                            <td>
+                                                <strong>@user.UserName</strong>
+                                                @if (isAdmin)
+                                                {
+                                                    <br>
+                                                    <small class="text-primary"><i class="fas fa-shield-alt"></i> Administrador</small>
+                                                }
+                                            </td>
+                                            <td>@user.Name</td>
+                                            <td>@user.Email</td>
+                                            <td>
+                                                <span class="badge @(isAdmin ? "bg-primary" : "bg-info")">@(user.PlanName ?? "Sin Plan")</span>
+                                            </td>
+                                            <td>
+                                                <span class="badge @(user.IsActive ? "bg-success" : "bg-danger")">
+                                                    <i class="fas @(user.IsActive ? "fa-check-circle" : "fa-times-circle")"></i>
+                                                    @(user.IsActive ? "Activo" : "Inactivo")
+                                                </span>
+                                            </td>
+                                            <td>@user.CreatedAt.ToString("dd/MM/yyyy")</td>
+                                            <td>
+                                                @if (isAdmin)
+                                                {
+                                                    <span class="badge bg-primary" title="Los administradores están protegidos y no pueden ser desactivados">
+                                                        <i class="fas fa-shield-alt"></i> Protegido
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    @if (user.IsActive)
+                                                    {
+                                                        <form asp-action="DeactivateUser" method="post" style="display:inline;">
+                                                            @Html.AntiForgeryToken()
+                                                            <input type="hidden" name="userId" value="@user.Id" />
+                                                            <button type="submit" class="btn btn-warning btn-sm"
+                                                                    onclick="return confirm('¿Está seguro de desactivar este usuario?')">
+                                                                <i class="fas fa-user-times"></i> Desactivar
+                                                            </button>
+                                                        </form>
+                                                    }
+                                                    else
+                                                    {
+                                                        <form asp-action="ActivateUser" method="post" style="display:inline;">
+                                                            @Html.AntiForgeryToken()
+                                                            <input type="hidden" name="userId" value="@user.Id" />
+                                                            <button type="submit" class="btn btn-success btn-sm"
+                                                                    onclick="return confirm('¿Está seguro de activar este usuario?')">
+                                                                <i class="fas fa-user-check"></i> Activar
+                                                            </button>
+                                                        </form>
+                                                    }
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                                else
+                                {
+                                    <tr>
+                                        <td colspan="8" class="text-center">
+                                            <div class="alert alert-info">
+                                                <i class="fas fa-info-circle"></i>
+                                                @if (!string.IsNullOrEmpty(ViewBag.SearchFilter as string))
+                                                {
+                                                    <text>No se encontraron usuarios que coincidan con "<strong>@ViewBag.SearchFilter</strong>"</text>
+                                                }
+                                                else
+                                                {
+                                                    <text>No se encontraron usuarios</text>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Información de resultados -->
+                    @if (ViewBag.Pagination != null)
+                    {
+                        var pagination = ViewBag.Pagination;
+                        int totalUsers = (int)pagination.totalUsers;
+                        int currentPage = (int)pagination.currentPage;
+                        int pageSize = (int)pagination.pageSize;
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <small class="text-muted">
+                                    Mostrando @(Math.Min((currentPage - 1) * pageSize + 1, totalUsers)) -
+                                    @(Math.Min(currentPage * pageSize, totalUsers)) de @totalUsers usuarios
+                                    @if (!string.IsNullOrEmpty(ViewBag.SearchFilter as string))
+                                    {
+                                        <text> | Filtrado por: "<strong>@ViewBag.SearchFilter</strong>"</text>
+                                    }
+                                </small>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Paginación -->
+                    @if (ViewBag.Pagination != null)
+                    {
+                        var pagination = ViewBag.Pagination;
+                        int currentPage = (int)pagination.currentPage;
+                        int totalPages = (int)pagination.totalPages;
+
+                        if (totalPages > 1)
+                        {
+                            <nav aria-label="Paginación de usuarios" class="mt-3">
+                                <ul class="pagination justify-content-center">
+                                    <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
+                                        <a class="page-link" asp-action="Index"
+                                           asp-route-page="@(currentPage - 1)"
+                                           asp-route-size="@ViewBag.PageSize"
+                                           asp-route-isActive="@ViewBag.IsActiveFilter"
+                                           asp-route-search="@ViewBag.SearchFilter">
+                                            Anterior
+                                        </a>
+                                    </li>
+
+                                    @{
+                                        int startPage = Math.Max(1, currentPage - 2);
+                                        int endPage = Math.Min(totalPages, currentPage + 2);
+                                    }
+
+                                    @for (int i = startPage; i <= endPage; i++)
+                                    {
+                                        <li class="page-item @(i == currentPage ? "active" : "")">
+                                            <a class="page-link" asp-action="Index"
+                                               asp-route-page="@i"
+                                               asp-route-size="@ViewBag.PageSize"
+                                               asp-route-isActive="@ViewBag.IsActiveFilter"
+                                               asp-route-search="@ViewBag.SearchFilter">
+                                                @i
+                                            </a>
+                                        </li>
+                                    }
+
+                                    <li class="page-item @(currentPage >= totalPages ? "disabled" : "")">
+                                        <a class="page-link" asp-action="Index"
+                                           asp-route-page="@(currentPage + 1)"
+                                           asp-route-size="@ViewBag.PageSize"
+                                           asp-route-isActive="@ViewBag.IsActiveFilter"
+                                           asp-route-search="@ViewBag.SearchFilter">
+                                            Siguiente
+                                        </a>
+                                    </li>
+                                </ul>
+                            </nav>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
