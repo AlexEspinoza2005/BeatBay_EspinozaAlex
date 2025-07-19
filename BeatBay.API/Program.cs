@@ -110,6 +110,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<PdfReportService>();
 
+
 var app = builder.Build();
 
 // 9. Configuraci�n del middleware
