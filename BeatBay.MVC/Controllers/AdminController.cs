@@ -228,7 +228,8 @@ namespace BeatBay.MVC.Controllers
             return RedirectToAction(nameof(Index));
         }
 
-        // **MÉTODO TOGGLE ELIMINADO** - Ya no se usa
+       
+
 
         // **Obtener detalles de un usuario específico**
         [HttpGet]
